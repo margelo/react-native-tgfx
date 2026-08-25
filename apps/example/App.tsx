@@ -383,17 +383,29 @@ type Screen = (typeof SCREENS)[number];
 
 function Screens() {
   const [screen, setScreen] = useState<Screen>('gallery');
+  // Trails one frame behind: unmounting the gallery's many canvases is slow, so hide first, unmount hidden.
+  const [mounted, setMounted] = useState<Screen>('gallery');
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (mounted !== screen) {
+      const id = requestAnimationFrame(() => setMounted(screen));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [screen, mounted]);
 
   return (
     <View style={styles.root}>
-      {/* Mounted for the app's life: each unmount wave of ~40 canvases grew the GPU driver's CPU arenas by several MB that never return (#254). */}
-      <View
-        style={[styles.screen, screen !== 'gallery' && styles.hiddenScreen]}
-        testID="screen-gallery"
-      >
-        <Demo />
-      </View>
+      {/* One container per screen, each with a fixed testID: a testID that
+          changes on a mounted view does not reach the native view. */}
+      {screen === 'gallery' || mounted === 'gallery' ? (
+        <View
+          style={[styles.screen, screen !== 'gallery' && styles.hiddenScreen]}
+          testID="screen-gallery"
+        >
+          <Demo />
+        </View>
+      ) : null}
       {screen === 'faceblur' ? (
         <View style={styles.screenDark} testID="screen-faceblur">
           <TgfxFaceBlur />
