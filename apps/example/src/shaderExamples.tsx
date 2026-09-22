@@ -454,10 +454,11 @@ export function PixelatePanel({ x, y, width, height }: Box) {
  * `<Shader>` above cannot do: `BlurPanel` blurs a checkerboard it evaluates
  * inline, because a paint shader has no way to read what is underneath it.
  *
- * Here the same 9-tap kernel runs over whatever the group composited — three
- * separate shapes — and a second pass posterizes the result of the first. Only
- * nesting expresses that: each group hands its finished pixels to the one
- * outside it.
+ * Here a gradient is posterized into hard bands, and a second pass softens the
+ * result of the first. The order is what makes the nesting legible: softening a
+ * gradient changes nothing you can see, so the blur on the band edges below is
+ * proof that the outer pass is reading the inner pass's output rather than the
+ * original drawing.
  */
 export const softenSource = `
 uniform shader content;
@@ -499,7 +500,7 @@ export function TwoPassFilterPanel({ x, y, width, height }: Box) {
 
   useEffect(() => {
     radius.value = withRepeat(
-      withTiming(2.5, { duration: 1800 }),
+      withTiming(3, { duration: 1800 }),
       -1,
       /* reverse */ true,
     );
@@ -507,34 +508,29 @@ export function TwoPassFilterPanel({ x, y, width, height }: Box) {
 
   return (
     <Group>
+      {/* Pass 2, over the bands pass 1 produced. sampleRadiusPx covers the
+          kernel's widest reach, so a pixel on the edge has real neighbours
+          to average rather than whatever tileMode would hand it. */}
       <RuntimeShader
-        source={posterizeSource}
+        source={softenSource}
         inputName="content"
-        uniforms={{ uSteps: 4 }}
+        uniforms={{ uRadius: radius }}
+        sampleRadiusPx={3}
       />
       <Group>
-        {/* sampleRadiusPx: the kernel reaches 2.5px at its widest, so that much
-            drawing is kept around the edges for a boundary pixel to read. */}
+        {/* Pass 1: a smooth gradient becomes six flat bands. */}
         <RuntimeShader
-          source={softenSource}
+          source={posterizeSource}
           inputName="content"
-          uniforms={{ uRadius: radius }}
-          sampleRadiusPx={3}
+          uniforms={{ uSteps: 6 }}
         />
-        <Rect x={x} y={y} width={width} height={height} color="#101725" />
-        <Rect
-          x={x + 12}
-          y={y + 12}
-          width={width * 0.45}
-          height={height - 24}
-          color="#d98a4a"
-        />
-        <Circle
-          cx={x + width * 0.72}
-          cy={y + height / 2}
-          r={Math.min(width * 0.2, height * 0.35)}
-          color="#4f7fd9"
-        />
+        <Rect x={x} y={y} width={width} height={height}>
+          <LinearGradient
+            start={{ x, y }}
+            end={{ x: x + width, y: y + height }}
+            colors={['#2b6cff', '#c94fd9', '#ff9d4a', '#ffe27a']}
+          />
+        </Rect>
       </Group>
     </Group>
   );
