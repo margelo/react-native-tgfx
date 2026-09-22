@@ -172,3 +172,107 @@ A count mismatch throws while the scene is compiled on commit:
 [tgfx] shader: the source declares 1 'uniform shader' (img) but 0 shader children
 were given — pass one shader child per declaration, in order
 ```
+
+## Filtering what is already drawn
+
+`<Shader>` is a paint *source*: it decides the colour of the pixels a shape is
+about to fill, and knows nothing about what is behind it.
+[`RuntimeShader`](/api/variables/RuntimeShader) is the other half — it runs over
+pixels that have already been drawn
+([`RuntimeShaderProps`](/api/interfaces/RuntimeShaderProps)). The source
+declares exactly one `uniform shader` for that drawing and samples it the usual
+way, with coordinates in the drawing's own pixels:
+
+```tsx
+import { Canvas, Circle, Group, Rect, RuntimeShader } from 'react-native-tgfx'
+
+const swapChannels = `
+uniform shader content;
+half4 main(float2 p) {
+  half4 c = content.eval(p);
+  return half4(c.b, c.g, c.r, c.a);
+}
+`
+
+<Canvas style={{ width: 300, height: 140 }}>
+  <Group>
+    <RuntimeShader source={swapChannels} inputName="content" />
+    <Rect x={0} y={0} width={150} height={140} color="#d94f4f" />
+    <Circle cx={200} cy={70} r={50} color="#4f7fd9" />
+  </Group>
+</Canvas>
+```
+
+Inside a `<Group>` the shader sees **everything the group drew, composited
+once** — both the rect and the circle above, as a single image. That is what
+makes a second pass possible: nest a group per pass and each one filters the
+result of the one inside it.
+
+```tsx
+// Blur first, then posterize what the blur produced.
+<Group>
+  <RuntimeShader source={posterize} inputName="content" />
+  <Group>
+    <RuntimeShader source={blurish} inputName="content" sampleRadiusPx={4} />
+    <Rect x={0} y={0} width={300} height={140} color="#d94f4f" />
+  </Group>
+</Group>
+```
+
+A group takes one `<RuntimeShader>`; two would have nothing meaningful to
+compose, so it throws and points you at nesting. On a shape instead of a group
+it joins the filter chain beside `<Blur>` and `<DropShadow>`, filtering that one
+draw, in declaration order:
+
+```tsx
+<Circle cx={70} cy={70} r={50} color="#4f7fd9">
+  <Blur blur={4} />
+  <RuntimeShader source={posterize} inputName="content" />
+</Circle>
+```
+
+### Sampling neighbours
+
+A shader that reads pixels other than the one it is producing — a blur, an edge
+detector, anything with a kernel — must say how far it reaches, in drawing
+pixels:
+
+```tsx
+<RuntimeShader
+  source={edges}
+  inputName="content"
+  sampleRadiusPx={3}
+  tileMode="clamp"
+/>
+```
+
+`sampleRadiusPx` does not change the size of the result. It tells the renderer
+to keep that much extra drawing around the edges, so a pixel on the boundary has
+real neighbours to read instead of nothing. `tileMode` decides what a sample
+past the edge of the drawing sees: `clamp` (the default) repeats the edge pixel,
+`decal` returns transparent, and `repeat`/`mirror` wrap.
+
+### Uniforms
+
+Uniforms work exactly as they do on `<Shader>` — a `SharedValue` component
+animates from a value slot with no JavaScript per frame — with one restriction:
+every declared uniform must be a float scalar or vector (`float`, `float2`,
+`float3`, `float4`) and must be supplied. An `int` or matrix uniform has no
+value slots, so it is rejected rather than silently frozen.
+
+```tsx
+const progress = useSharedValue(0)
+
+<Group>
+  <RuntimeShader
+    source={fade}
+    inputName="content"
+    uniforms={{ uProgress: progress }}
+  />
+  <Rect x={0} y={0} width={300} height={140} color="#d94f4f" />
+</Group>
+```
+
+A changed uniform rebuilds the filter natively, which is cheaper than a scene
+re-encode but not free: the compiled shader program is cached and reused, and a
+slot whose value has not actually moved keeps the existing filter untouched.

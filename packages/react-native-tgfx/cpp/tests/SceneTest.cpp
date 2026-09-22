@@ -1028,6 +1028,92 @@ void aMiterLimitCutsBackASharpSpike() {
   CHECK(opaqueAt(spike(0), 32, 2));
 }
 
+/// A <RuntimeShader> in a group filters what the group composited, rather than
+/// each child on its own: the shader samples the drawing as TGFX_CHILD_0.
+void aRuntimeShaderFiltersTheWholeGroup() {
+  // Strings: 0 = body, 1 = preamble. The body swaps red and blue, so a filter
+  // that ran is visible in the channels rather than merely in "something drew".
+  const std::vector<std::string> strings = {"return TGFX_CHILD_0(fragCoord).bgra;", ""};
+
+  // kind 13 (GroupLayer): opCount, flags, [clip], [layer alpha], [grain],
+  // [blend + runtime filter], childCount, children. Flag 4 layer | 32 filter.
+  auto scene = [&](bool filtered) {
+    Writer w;
+    w.push(1);
+    w.push(13);
+    w.push(0);              // no transform ops
+    w.push(filtered ? (4 | 32) : 0);
+    if (filtered) {
+      w.pushAnim(1);        // layer alpha
+      w.pushAnim(3);        // SrcOver
+      w.push(0);            // sampleRadiusPx
+      w.push(0);            // tileMode clamp
+      w.push(0);            // body
+      w.push(1);            // preamble
+      w.push(0);            // no helper functions
+      w.push(0);            // no uniforms
+    }
+    w.push(2);              // two children, composited together before filtering
+    w.push(1);              // Rect
+    w.pushAnim(0);
+    w.pushAnim(0);
+    w.pushAnim(32);
+    w.pushAnim(32);
+    w.pushPaint(0xffff0000, false);  // red — packed 0xAARRGGBB
+    w.push(1);              // Rect
+    w.pushAnim(32);
+    w.pushAnim(0);
+    w.pushAnim(16);
+    w.pushAnim(32);
+    w.pushPaint(0xff00ff00, false);  // green
+    return render(w.finish(), strings, {});
+  };
+
+  auto plain = scene(false);
+  auto filtered = scene(true);
+  CHECK(pixelAt(plain, 16, 16)[0] == 255);      // red where it was drawn
+  CHECK(pixelAt(plain, 40, 16)[1] == 255);      // green beside it
+
+  // Both children came through the one filter: red reads blue, green is its own
+  // swap of itself, and the untouched corner stays empty.
+  CHECK(pixelAt(filtered, 16, 16)[2] == 255);
+  CHECK(pixelAt(filtered, 16, 16)[0] == 0);
+  CHECK(pixelAt(filtered, 40, 16)[1] == 255);
+  CHECK(!opaqueAt(filtered, 16, 48));
+}
+
+/// The group's layer alpha still applies on top of the filter's own result.
+void aFilteredGroupKeepsItsLayerAlpha() {
+  const std::vector<std::string> strings = {"return TGFX_CHILD_0(fragCoord);", ""};
+  auto scene = [&](double alpha) {
+    Writer w;
+    w.push(1);
+    w.push(13);
+    w.push(0);
+    w.push(4 | 32);
+    w.pushAnim(alpha);
+    w.pushAnim(3);
+    w.push(0);
+    w.push(0);
+    w.push(0);
+    w.push(1);
+    w.push(0);
+    w.push(0);
+    w.push(1);
+    w.push(1);  // Rect
+    w.pushAnim(0);
+    w.pushAnim(0);
+    w.pushAnim(32);
+    w.pushAnim(32);
+    w.pushPaint(0xffff0000, false);  // red
+    return render(w.finish(), strings, {});
+  };
+  // An identity filter at full alpha leaves the colour alone; at half it halves it.
+  CHECK(pixelAt(scene(1), 16, 16)[0] == 255);
+  auto half = pixelAt(scene(0.5), 16, 16)[0];
+  CHECK(half > 120 && half < 136);
+}
+
 /// A group clip confines its subtree; inverting it keeps exactly the complement.
 void aGroupClipConfinesItsSubtree() {
   // kind 13 (GroupLayer): opCount, flags, clip block, [alpha], childCount, children.
@@ -5879,6 +5965,8 @@ int main() {
   encodingUnpremultipliesAndRejectsLiveFrames();
   anOffscreenSurfaceHitTestsBeforeTheFirstDrain();
   batchClusteringKeepsOverlapOrderAndPixels();
+  aRuntimeShaderFiltersTheWholeGroup();
+  aFilteredGroupKeepsItsLayerAlpha();
   aBrokenShaderFailsTheRenderWithTheCompilerMessage();
   std::printf(failures == 0 ? "SceneTest: ok\n" : "SceneTest: %d failure(s)\n",
               failures);

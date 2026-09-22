@@ -747,6 +747,43 @@ export interface SweepGradientProps extends GradientStops {
  */
 export type UniformValue = Animated<number> | Array<Animated<number>>
 
+/**
+ * A runtime shader used as a *filter* over pixels that are already drawn,
+ * rather than as a paint source — that is `<Shader>`. The source declares one
+ * `uniform shader` for the drawing and samples it with `name.eval(coord)`,
+ * where `coord` is in the drawing's own pixels.
+ *
+ * As a direct child of a `<Group>` it filters everything that group composited,
+ * which is how a second pass sees the result of the first. On a shape it joins
+ * the paint's filter chain beside `<Blur>` and `<DropShadow>`, in declaration
+ * order.
+ */
+export interface RuntimeShaderProps {
+  /** The supported SkSL subset, with exactly one `uniform shader` declared. */
+  source: string
+  /**
+   * The declared `uniform shader`'s name. Optional, and checked against the
+   * source when given, so a renamed uniform fails here instead of drawing
+   * nothing.
+   */
+  inputName?: string
+  /**
+   * One entry per declared numeric uniform, all of them required. A SharedValue
+   * component animates from a value slot, so a uniform costs no JS per frame.
+   */
+  uniforms?: Record<string, UniformValue>
+  /**
+   * How far the source samples from the pixel it is producing, in drawing
+   * pixels. Sampling past the edge of a clip reads nothing unless the renderer
+   * is told to keep this much around it. Defaults to 0.
+   */
+  sampleRadiusPx?: number
+  /** What a sample outside the drawing reads. Defaults to `'clamp'`. */
+  tileMode?: TileMode
+  /** A handle from `useNode()`, for patching `uniforms` without a render. */
+  ref?: NodeHandle
+}
+
 export interface ShaderProps {
   /**
    * A handle from `useNode()`, for patching `uniforms` without a React render.

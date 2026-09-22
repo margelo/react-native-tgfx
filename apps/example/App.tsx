@@ -59,6 +59,7 @@ import {
   ChildShaderPanels,
   HelperCollisionPanels,
   SdCirclePanel,
+  TwoPassFilterPanel,
 } from './src/shaderExamples';
 import { TgfxCameraEffects } from './src/TgfxCameraEffects';
 import { TgfxFaceBlur } from './src/TgfxFaceBlur';
@@ -313,6 +314,13 @@ const Demo = memo(function Demo() {
         height={140}
       >
         <ChildShaderPanels x={0} y={0} width={350} height={120} />
+      </Section>
+
+      <Section
+        label="Runtime shader · filtering what a group drew (two passes)"
+        height={140}
+      >
+        <TwoPassFilterPanel x={0} y={0} width={350} height={120} />
       </Section>
 
       <ShaderScreenSection />

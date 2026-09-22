@@ -455,9 +455,46 @@ half4 main(float2 pos) {
 `
 ```
 
-## A shader cannot read what is under it
+## A `<Shader>` cannot read what is under it — `<RuntimeShader>` can
 
-`<Shader>` has no access to the backdrop. To blur or distort *real content*
-already drawn, use `<BackdropBlur>` / `<Glass>`, or put the content in an
-`<ImageShader>` child and sample it. A "blur" written as a kernel inside a
-shader can only blur what the shader itself evaluates.
+`<Shader>` is a paint *source*: it has no access to the backdrop, and a "blur"
+written as a kernel inside one can only blur what the shader itself evaluates.
+
+`<RuntimeShader>` is the filter form. It runs over pixels that are already
+drawn, bound to the one `uniform shader` its source declares, sampled in the
+drawing's own pixels.
+
+```ts
+interface RuntimeShaderProps {
+  source: string              // exactly one `uniform shader` declared
+  inputName?: string          // checked against that declaration when given
+  uniforms?: Record<string, UniformValue>  // float scalars/vectors only, all required
+  sampleRadiusPx?: number     // how far the source reads from the pixel it produces
+  tileMode?: TileMode         // what a sample past the edge sees; default 'clamp'
+  ref?: NodeHandle
+}
+```
+
+Inside a `<Group>` it filters **everything that group composited, as one
+image** — which is the only way a second pass can see the result of the first.
+Nest a group per pass; one group takes one `<RuntimeShader>`, and two throws.
+
+```tsx
+<Group>
+  <RuntimeShader source={posterize} inputName="content" />
+  <Group>
+    <RuntimeShader source={smooth} inputName="content" sampleRadiusPx={3} />
+    <CameraFrame image={image} {...posture} />
+  </Group>
+</Group>
+```
+
+On a shape it joins the paint's filter chain beside `<Blur>`, in declaration
+order, filtering that one draw.
+
+`sampleRadiusPx` does not grow the result: it keeps that much extra drawing
+around the edges so a boundary pixel has neighbours to read. A kernel shader
+that leaves it at 0 reads `tileMode` at the edge instead of real content.
+
+`<BackdropBlur>` / `<Glass>` still read what is *behind* the canvas region;
+`<RuntimeShader>` reads what its own subtree drew.

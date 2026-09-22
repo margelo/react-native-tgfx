@@ -43,7 +43,8 @@ model first, or you will write Skia code that compiles and runs slowly.
 | `<BackdropFilter>` / `<BackdropBlur>` | `<BackdropBlur>` | plus `<Glass>` (refraction, frost, dispersion) |
 | `<Mask mode mask>` | `<Mask mode mask>` | |
 | `<DashPathEffect>` `<CornerPathEffect>` | same names | children of `<Path>` |
-| `<RuntimeShader source={effect}>` | `<Shader source={string}>` | no `RuntimeEffect.Make` step |
+| `<RuntimeShader source={effect}>` | `<Shader source={string}>` | no `RuntimeEffect.Make` step. **Careful:** we also export a `<RuntimeShader>`, and it is not this one — see the row below |
+| `ImageFilter.MakeRuntimeShader(...)` | `<RuntimeShader source inputName>` | a shader over pixels already drawn; in a `<Group>` it filters the whole composited subtree |
 | `useImage` | `useImage` | returns `TgfxImage \| null`; `useImageState` adds `loading`/`error` |
 | `useSVG` + `<ImageSVG svg=…>` | `useImage(require('./x.svg'))` or `useImage(markup)` + `<ImageSVG image=…>` | same name, `image=` instead of `svg=`; an SVG source decodes to a resolution-independent picture, and markup works as a source too |
 | `useVideo` | `useVideo` | `video.currentFrame` → `<TgfxImage image={...}>` |
@@ -332,7 +333,10 @@ const frameProcessor = useSkiaFrameProcessor((frame) => {
   frame.render(paint)
 }, [])
 
-// After (tgfx) — declarative, uniforms on the UI thread
+// After (tgfx) — declarative, uniforms on the UI thread.
+// Shading the frame itself: sample it as an <ImageShader> input.
+// To filter what a whole subtree drew instead, that is <RuntimeShader> —
+// Skia's MakeRuntimeShader, not Skia's <RuntimeShader>.
 <CameraFrame image={image} {...posture}>
   {posture.width > 0 && (
     <Fill>

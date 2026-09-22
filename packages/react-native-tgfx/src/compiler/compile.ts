@@ -28,6 +28,7 @@ import {
   type GradientInput,
   type PaintInput,
 } from './paint'
+import { writeRuntimeFilter } from './runtimeShader'
 import { alignCode, writeFont, writeTextRuns } from './text'
 import { toRadians, type Transform, type Vector } from './transform'
 import {
@@ -40,6 +41,7 @@ import { Kind, type SceneWriter } from './writer'
 import type {
   AtlasSprite,
   ClipRect,
+  RuntimeShaderProps,
   UniformValue,
   Vector as Vec,
 } from '../types'
@@ -298,7 +300,9 @@ function extractGradient(
   w: SceneWriter,
   node: Node
 ): GradientInput | undefined {
-  if (node.type !== NodeType.Shader) {
+  // Both of these carry uniforms, so their ref is applied where the uniforms
+  // are read rather than over the whole node.
+  if (node.type !== NodeType.Shader && node.type !== NodeType.RuntimeShader) {
     node = applyRef(w, node)
   }
   const p = node.props
@@ -404,10 +408,37 @@ function extractGradient(
   return undefined
 }
 
+/** The props a `<RuntimeShader>` compiles with, its `ref` resolved to live uniforms. */
+function runtimeShaderProps(w: SceneWriter, node: Node): RuntimeShaderProps {
+  const p = node.props
+  const declared = p.uniforms as Record<string, UniformValue> | undefined
+  const ref = p.ref
+  let uniforms = declared
+  if (isNodeHandle(ref)) {
+    w.refs.push(ref)
+    uniforms = nodeInternals(ref).applyUniforms(declared, w.reseed, w)
+  }
+  return {
+    source: String(resolveValue(p.source) ?? ''),
+    inputName: p.inputName as string | undefined,
+    uniforms,
+    sampleRadiusPx: p.sampleRadiusPx as number | undefined,
+    tileMode: p.tileMode as TileMode | undefined,
+  }
+}
+
 function extractFilter(
   w: SceneWriter,
   node: Node
 ): Partial<PaintInput> | undefined {
+  if (node.type === NodeType.RuntimeShader) {
+    return {
+      imageFilter: {
+        kind: 'runtimeShader',
+        runtimeShader: runtimeShaderProps(w, node),
+      },
+    }
+  }
   node = applyRef(w, node)
   const p = node.props
   switch (node.type) {
@@ -553,6 +584,12 @@ function paintFromChildren(w: SceneWriter, node: Node): PaintInput | null {
           '[tgfx] <FilmGrain> applies only as a direct child of a <Group>: it dusts what that group drew. Anywhere else it draws nothing.'
         )
       }
+      continue
+    }
+    if (child.type === NodeType.RuntimeShader && node.type === NodeType.Group) {
+      // A group's own style, like grain: writeGroup puts it on the layer so it
+      // filters what the group composited. Left here it would instead be
+      // inherited by each child and filter them one at a time.
       continue
     }
     if (KIND_OF[child.type] !== undefined) {
@@ -955,12 +992,27 @@ function writeGroup(
   const p = node.props
   const local = localPaint(w, node)
   const clip = p.clip as ClipRect | string | undefined
+  const runtimeFilters = node.children.filter(
+    (c) => c.type === NodeType.RuntimeShader
+  )
+  if (runtimeFilters.length > 1) {
+    throw new TypeError(
+      '[tgfx] <RuntimeShader>: a <Group> takes one, because each pass needs the pixels the one before it produced — nest a <Group> per pass'
+    )
+  }
+  const runtimeFilter = runtimeFilters[0]
   // A layer composites the subtree once, so the whole inherited alpha rides it, not the children.
-  const layer = p.layer === true
+  // A filter needs that single surface to read, so it takes a layer either way.
+  const layer = p.layer === true || runtimeFilter !== undefined
   const alpha = mulOpacity(ctx.opacity, local.opacity)
   const childCtx: CompileCtx = {
     paint: mergePaint(ctx.paint, local),
     opacity: layer ? 1 : alpha,
+  }
+  if (runtimeFilter !== undefined) {
+    // The blend rides the layer paint below, so the children composite into the
+    // layer normally instead of each blending with what is behind the group.
+    childCtx.paint = { ...childCtx.paint, blendMode: undefined }
   }
   const picture = p.picture === true
   const grain = node.children.find((c) => c.type === NodeType.FilmGrain)
@@ -975,7 +1027,8 @@ function writeGroup(
     (clip != null ? 1 : 0) |
     (p.invertClip === true ? 2 : 0) |
     (layer ? 4 : 0) |
-    (grain != null ? 16 : 0)
+    (grain != null ? 16 : 0) |
+    (runtimeFilter !== undefined ? 32 : 0)
   let flagsAt = -1
   if (extended) {
     flagsAt = w.reserve()
@@ -987,6 +1040,11 @@ function writeGroup(
     }
     if (grain != null) {
       writeGrain(w, applyRef(w, grain).props)
+    }
+    if (runtimeFilter !== undefined) {
+      const blendMode = local.blendMode ?? ctx.paint.blendMode
+      w.pushAnim(isSharedValue(blendMode) ? blendMode : blendCode(blendMode), 3)
+      writeRuntimeFilter(w, runtimeShaderProps(w, runtimeFilter))
     }
   }
   const childCountAt = w.reserve()

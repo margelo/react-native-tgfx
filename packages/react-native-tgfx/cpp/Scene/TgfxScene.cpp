@@ -144,6 +144,40 @@ size_t boundedCount(const SceneReader& r, int count) {
   return std::min(static_cast<size_t>(std::max(0, count)), r.remaining());
 }
 
+/// The shader source block shared by a runtime-shader paint (shader kind 6) and
+/// a runtime image filter: body, preamble, helper names, then the uniforms with
+/// their value slots. The caller reads whatever follows it.
+RuntimeShaderCmd readRuntimeShaderSource(SceneReader& r) {
+  RuntimeShaderCmd source;
+  source.body = r.nextString();
+  // File-scope helpers: GLSL ES has no nested functions.
+  source.preamble = r.nextString();
+  const int functionCount = r.nextInt();
+  source.functionNames.reserve(boundedCount(r, functionCount));
+  for (int i = 0; i < functionCount && r.ok; i++) {
+    source.functionNames.push_back(r.nextString());
+  }
+  const int uniformCount = r.nextInt();
+  source.uniforms.reserve(boundedCount(r, uniformCount));
+  for (int i = 0; i < uniformCount && r.ok; i++) {
+    tgfx::RuntimeShaderUniform uniform;
+    uniform.name = r.nextString();
+    const int size = r.nextInt();
+    std::vector<AnimF> uniformSlots;
+    for (int v = 0; v < size && r.ok; v++) {
+      AnimF f = r.nextAnim();
+      uniform.values.push_back(f.literal);
+      uniformSlots.push_back(f);
+    }
+    // Dropped uniforms must drop their slots too, or the flat run desyncs.
+    if (!uniform.name.empty() && !uniform.values.empty()) {
+      source.uniforms.push_back(std::move(uniform));
+      source.slots.insert(source.slots.end(), uniformSlots.begin(), uniformSlots.end());
+    }
+  }
+  return source;
+}
+
 std::atomic<size_t> gFilterBuilds{0};
 
 /// Node kinds, mirrored from src/compiler/writer.ts.
@@ -709,39 +743,14 @@ std::shared_ptr<tgfx::Shader> SceneRenderer::readShader(SceneReader& r, PaintCmd
     return nullptr;
   }
   if (kind == 6) {
-    std::string body = r.nextString();
-    // File-scope helpers: GLSL ES has no nested functions.
-    std::string preamble = r.nextString();
-    int functionCount = r.nextInt();
-    std::vector<std::string> functionNames;
-    functionNames.reserve(boundedCount(r, functionCount));
-    for (int i = 0; i < functionCount && r.ok; i++) {
-      functionNames.push_back(r.nextString());
-    }
-    int uniformCount = r.nextInt();
-    std::vector<tgfx::RuntimeShaderUniform> uniforms;
-    uniforms.reserve(boundedCount(r, uniformCount));
-    std::vector<AnimF> slots;
-    bool animated = false;
-    for (int i = 0; i < uniformCount && r.ok; i++) {
-      tgfx::RuntimeShaderUniform uniform;
-      uniform.name = r.nextString();
-      int size = r.nextInt();
-      std::vector<AnimF> uniformSlots;
-      for (int v = 0; v < size && r.ok; v++) {
-        AnimF f = r.nextAnim();
-        uniform.values.push_back(f.literal);
-        uniformSlots.push_back(f);
-      }
-      // Dropped uniforms must drop their slots too, or the flat run desyncs.
-      if (!uniform.name.empty() && !uniform.values.empty()) {
-        uniforms.push_back(std::move(uniform));
-        for (const auto& f : uniformSlots) {
-          animated = animated || f.slot >= 0;
-          slots.push_back(f);
-        }
-      }
-    }
+    auto source = readRuntimeShaderSource(r);
+    auto& body = source.body;
+    auto& preamble = source.preamble;
+    auto& functionNames = source.functionNames;
+    auto& uniforms = source.uniforms;
+    auto& slots = source.slots;
+    const bool animated = std::any_of(slots.begin(), slots.end(),
+                                      [](const AnimF& f) { return f.slot >= 0; });
     int childCount = r.nextInt();
     std::vector<ChildShaderCmd> children;
     children.reserve(boundedCount(r, childCount));
@@ -936,7 +945,8 @@ bool ImageFilterCmd::animated() const {
   return animColor || blurX.slot >= 0 || blurY.slot >= 0 || dx.slot >= 0 ||
          dy.slot >= 0 || (first != nullptr && first->animated()) ||
          (then != nullptr && then->animated()) ||
-         (colorFilter != nullptr && colorFilter->animated());
+         (colorFilter != nullptr && colorFilter->animated()) ||
+         (runtimeShader != nullptr && runtimeShader->animated());
 }
 
 std::shared_ptr<tgfx::ImageFilter> ImageFilterCmd::build(
@@ -975,6 +985,11 @@ std::shared_ptr<tgfx::ImageFilter> ImageFilterCmd::build(
       return nullptr;
     }
     filter = tgfx::ImageFilter::ColorFilter(std::move(inner));
+  } else if (kind == 4) {
+    if (runtimeShader == nullptr) {
+      return nullptr;
+    }
+    filter = runtimeShader->build(v);
   } else {
     return nullptr;
   }
@@ -1080,7 +1095,33 @@ std::shared_ptr<ImageFilterCmd> SceneRenderer::readImageFilterCmd(SceneReader& r
     if (cmd->colorFilter == nullptr) {
       return nullptr;
     }
+  } else if (kind == 4) {
+    cmd->kind = 4;
+    cmd->runtimeShader = readRuntimeImageFilter(r);
+    if (cmd->runtimeShader == nullptr) {
+      return nullptr;
+    }
   } else {
+    return nullptr;
+  }
+  return cmd;
+}
+
+std::shared_ptr<RuntimeImageFilterCmd> SceneRenderer::readRuntimeImageFilter(SceneReader& r) {
+  auto cmd = std::make_shared<RuntimeImageFilterCmd>();
+  cmd->sampleRadiusPx = static_cast<float>(r.next());
+  const int tile = r.nextInt();
+  // The writer validates these too; a program from anywhere else must not get
+  // as far as handing tgfx a radius it would reject or a tile mode it has no
+  // case for, because the words after it would then be read as a node.
+  if (!std::isfinite(cmd->sampleRadiusPx) || cmd->sampleRadiusPx < 0 || tile < 0 || tile > 3) {
+    r.ok = false;
+    return nullptr;
+  }
+  cmd->tileMode = tileModeOf(tile);
+  cmd->shader = readRuntimeShaderSource(r);
+  if (cmd->shader.body.empty()) {
+    r.ok = false;
     return nullptr;
   }
   return cmd;
@@ -1463,6 +1504,13 @@ bool SceneRenderer::readNode(SceneReader& r, DrawCmd& cmd, int depth) {
           // the ancestor off the recording path, the way a video handle does.
           r.dynamic++;
           cmd.grain = std::move(grain);
+        }
+        if ((flags & 32) != 0) {
+          cmd.runtimeBlend = r.nextAnim();
+          cmd.runtimeFilter = readRuntimeImageFilter(r);
+          // Like the grain block: the filter resolves against live values, so an
+          // ancestor <Group picture> must not freeze it into a recording.
+          r.dynamic++;
         }
       }
       int childCount = r.nextInt();
@@ -2291,7 +2339,17 @@ void SceneRenderer::drawCmd(tgfx::Canvas* canvas, const DrawCmd& cmd,
       default: break;
     }
     if (cmd.layer) {
-      canvas->saveLayerAlpha(cmd.layerAlpha.resolve(v));
+      if (cmd.runtimeFilter != nullptr) {
+        // The filter rides the layer the group already takes, so the shader
+        // sees the whole subtree's pixels and the blend applies to its result.
+        tgfx::Paint filterPaint;
+        filterPaint.setAlpha(cmd.layerAlpha.resolve(v));
+        filterPaint.setBlendMode(blendModeOf(cmd.runtimeBlend.resolveInt(v)));
+        filterPaint.setImageFilter(cmd.runtimeFilter->build(v));
+        canvas->saveLayer(&filterPaint);
+      } else {
+        canvas->saveLayerAlpha(cmd.layerAlpha.resolve(v));
+      }
     }
     if (cmd.cachePicture || cmd.grain != nullptr) {
       // Recorded under the identity, so the transform above stays live and the

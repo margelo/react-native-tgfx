@@ -3,6 +3,8 @@
 import { isColorComponents, resolveColor, type Color } from './colors'
 import { tileCode, type TileMode } from './image'
 import { isSharedValue, resolveValue, type MaybeSharedValue } from './values'
+import { writeRuntimeFilter } from './runtimeShader'
+import type { RuntimeShaderProps } from '../types'
 import type { SceneWriter } from './writer'
 
 export type BlendMode =
@@ -100,7 +102,9 @@ export interface ColorFilterInput {
  * — tgfx draws through an offscreen layer — so it costs a render target.
  */
 export interface ImageFilterInput {
-  kind: 'blur' | 'dropShadow' | 'compose' | 'colorFilter'
+  kind: 'blur' | 'dropShadow' | 'compose' | 'colorFilter' | 'runtimeShader'
+  /** `'runtimeShader'` only: the shader run over the rasterised drawing. */
+  runtimeShader?: RuntimeShaderProps
   /** `'compose'` only. Named apart from the shadow's `inner` flag below. */
   first?: ImageFilterInput
   then?: ImageFilterInput
@@ -195,6 +199,14 @@ function writeImageFilter(
   if (imageFilter.kind === 'colorFilter') {
     w.push(3)
     writeColorFilter(w, imageFilter.colorFilter)
+    return
+  }
+  if (imageFilter.kind === 'runtimeShader') {
+    if (imageFilter.runtimeShader === undefined) {
+      throw new TypeError('[tgfx] <RuntimeShader>: nothing to filter with')
+    }
+    w.push(4)
+    writeRuntimeFilter(w, imageFilter.runtimeShader)
     return
   }
   const blurX = imageFilter.blurX ?? imageFilter.blur

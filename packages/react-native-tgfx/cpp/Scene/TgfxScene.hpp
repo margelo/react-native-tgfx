@@ -34,7 +34,7 @@ class Typeface;
 namespace tgfxrn {
 
 /// Wire-format version, mirrored by SCENE_VERSION in src/compiler/writer.ts.
-inline constexpr double kSceneVersion = 30;
+inline constexpr double kSceneVersion = 31;
 
 /// How an image is scaled into its destination rect; see fitRects() in TgfxScene.cpp.
 enum class Fit { Fill = 0, Contain, Cover, FitWidth, FitHeight, None, ScaleDown };
@@ -107,6 +107,22 @@ struct RuntimeShaderCmd {
   std::shared_ptr<tgfx::Shader> build(std::span<const double> values) const;
 };
 
+/**
+ * A runtime shader used as an image filter: it samples the rasterised drawing
+ * as TGFX_CHILD_0 rather than painting one. Its uniforms animate from slots;
+ * the filter itself is immutable, so a changed uniform rebuilds it.
+ */
+struct RuntimeImageFilterCmd {
+  RuntimeShaderCmd shader;
+  float sampleRadiusPx = 0;
+  tgfx::TileMode tileMode = tgfx::TileMode::Clamp;
+  mutable std::shared_ptr<tgfx::ImageFilter> cached;
+  mutable std::vector<float> cachedValues;
+
+  bool animated() const;
+  std::shared_ptr<tgfx::ImageFilter> build(std::span<const double> values) const;
+};
+
 /// A gradient whose geometry, stops or stop colours carry value slots.
 struct GradientShaderCmd {
   /// 0 linear, 1 radial, 2 sweep, 3 diamond — the wire's shader kinds.
@@ -163,7 +179,7 @@ struct ColorFilterCmd {
 
 /// An image filter (blur / drop shadow) whose parameters may carry value slots.
 struct ImageFilterCmd {
-  /// 0 blur, 1 dropShadow, 2 compose, 3 colorFilter.
+  /// 0 blur, 1 dropShadow, 2 compose, 3 colorFilter, 4 runtimeShader.
   int kind = 0;
   AnimF blurX{};
   AnimF blurY{};
@@ -180,6 +196,8 @@ struct ImageFilterCmd {
   /// Kind 3: a colour filter placed in the image chain, so it runs *after*
   /// whatever precedes it rather than on the paint before the draw.
   std::shared_ptr<ColorFilterCmd> colorFilter;
+  /// Kind 4: a runtime shader over the rasterised drawing.
+  std::shared_ptr<RuntimeImageFilterCmd> runtimeShader;
   /// As on ColorFilterCmd: a static subtree of an animated chain is built once.
   mutable std::shared_ptr<tgfx::ImageFilter> cached;
 
@@ -362,6 +380,11 @@ struct DrawCmd {
   mutable std::shared_ptr<tgfx::Picture> picture;
   /// Group only: behind a pointer so an ungrained group costs one word.
   std::shared_ptr<GrainCmd> grain;
+  /// Group only: a runtime shader over what the group composited. Implies
+  /// `layer`, since the filter needs the subtree's pixels in one place.
+  std::shared_ptr<RuntimeImageFilterCmd> runtimeFilter;
+  /// The blend the filtered layer composites with; unused without a filter.
+  AnimF runtimeBlend{3, -1};
   AnimF layerAlpha{1, -1};
   tgfx::Rect clipRect = tgfx::Rect::MakeEmpty();
   float clipRadiusX = 0;
@@ -482,6 +505,7 @@ class SceneRenderer {
   void readFilters(SceneReader& reader, PaintCmd& paint);
   std::shared_ptr<ColorFilterCmd> readColorFilterCmd(SceneReader& reader, int depth);
   std::shared_ptr<ImageFilterCmd> readImageFilterCmd(SceneReader& reader, int depth);
+  std::shared_ptr<RuntimeImageFilterCmd> readRuntimeImageFilter(SceneReader& reader);
   std::shared_ptr<tgfx::Shader> readShader(SceneReader& reader, PaintCmd* out,
                                            int depth = 0);
 

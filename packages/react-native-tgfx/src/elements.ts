@@ -6,6 +6,7 @@
 // factory tree and its JSX equivalent compile to byte-identical programs.
 import { NodeType, type Node, type NodeTypeName } from './reconciler/types'
 import type {
+  RuntimeShaderProps,
   AlphaThresholdProps,
   AtlasProps,
   BackdropProps,
@@ -146,6 +147,8 @@ export const diamondGradient = element<RadialGradientProps>(
 )
 /** Imperative `<Shader>`: a runtime SkSL shader with uniforms. */
 export const shader = element<ShaderProps>(NodeType.Shader)
+/** Imperative `<RuntimeShader>`: a runtime SkSL filter over what is drawn. */
+export const runtimeShader = element<RuntimeShaderProps>(NodeType.RuntimeShader)
 /** Imperative `<ImageShader>`: an image as a paint source. */
 export const imageShader = element<ImageShaderProps>(NodeType.ImageShader)
 /** Imperative `<ColorShader>`: a solid colour as a shader input. */

@@ -1,8 +1,17 @@
+import { useEffect } from 'react';
 import {
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
+import {
+  Circle,
+  Group,
   ImageShader,
   LinearGradient,
   Rect,
   RoundedRect,
+  RuntimeShader,
   Shader,
   useImage,
 } from 'react-native-tgfx';
@@ -375,5 +384,96 @@ export function HelperCollisionPanels({ x, y, width, height }: Box) {
         );
       })}
     </>
+  );
+}
+
+/**
+ * A `<RuntimeShader>` filters pixels that are already drawn, which is what
+ * `<Shader>` above cannot do: `BlurPanel` blurs a checkerboard it evaluates
+ * inline, because a paint shader has no way to read what is underneath it.
+ *
+ * Here the same 9-tap kernel runs over whatever the group composited — three
+ * separate shapes — and a second pass posterizes the result of the first. Only
+ * nesting expresses that: each group hands its finished pixels to the one
+ * outside it.
+ */
+export const softenSource = `
+uniform shader content;
+uniform float uRadius;
+
+half4 main(float2 pos) {
+  half4 acc = half4(0.0);
+  // Constant bounds: GLSL ES will not unroll a loop it cannot size.
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      float2 at = pos + float2(float(dx), float(dy)) * uRadius;
+      acc += content.eval(at);
+    }
+  }
+  return acc / 9.0;
+}
+`;
+
+export const posterizeSource = `
+uniform shader content;
+uniform float uSteps;
+
+half4 main(float2 pos) {
+  half4 c = content.eval(pos);
+  // Unpremultiply before quantising, or the steps land on alpha-scaled values.
+  float a = max(float(c.a), 0.0001);
+  float3 rgb = float3(c.rgb) / a;
+  rgb = floor(rgb * uSteps + 0.5) / uSteps;
+  return half4(half3(rgb * a), c.a);
+}
+`;
+
+/**
+ * Two passes over one composited group. `uRadius` rides a SharedValue, so the
+ * kernel widens from the UI thread with no JS per frame and no re-encode.
+ */
+export function TwoPassFilterPanel({ x, y, width, height }: Box) {
+  const radius = useSharedValue(0.5);
+
+  useEffect(() => {
+    radius.value = withRepeat(
+      withTiming(2.5, { duration: 1800 }),
+      -1,
+      /* reverse */ true,
+    );
+  }, [radius]);
+
+  return (
+    <Group>
+      <RuntimeShader
+        source={posterizeSource}
+        inputName="content"
+        uniforms={{ uSteps: 4 }}
+      />
+      <Group>
+        {/* sampleRadiusPx: the kernel reaches 2.5px at its widest, so that much
+            drawing is kept around the edges for a boundary pixel to read. */}
+        <RuntimeShader
+          source={softenSource}
+          inputName="content"
+          uniforms={{ uRadius: radius }}
+          sampleRadiusPx={3}
+        />
+        <Rect x={x} y={y} width={width} height={height} color="#101725" />
+        <Rect
+          x={x + 12}
+          y={y + 12}
+          width={width * 0.45}
+          height={height - 24}
+          color="#d98a4a"
+        />
+        <Circle
+          cx={x + width * 0.72}
+          cy={y + height / 2}
+          r={Math.min(width * 0.2, height * 0.35)}
+          color="#4f7fd9"
+        />
+      </Group>
+    </Group>
   );
 }
