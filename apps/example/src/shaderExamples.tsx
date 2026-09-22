@@ -13,6 +13,7 @@ import {
   RoundedRect,
   RuntimeShader,
   Shader,
+  Text,
   useImage,
 } from 'react-native-tgfx';
 import type { NodeHandle } from 'react-native-tgfx';
@@ -384,6 +385,67 @@ export function HelperCollisionPanels({ x, y, width, height }: Box) {
         );
       })}
     </>
+  );
+}
+
+/**
+ * The smallest useful `<RuntimeShader>`: one pass, one uniform, no nesting.
+ *
+ * It snaps each coordinate to a cell before sampling, so the whole group —
+ * two shapes *and* the text — comes back as one pixelated image. Neither half
+ * of that is reachable any other way: text cannot go into an `<ImageShader>`
+ * for a `<Shader>` to sample, and no colour filter can read a neighbouring
+ * pixel. The group is what makes them one picture rather than three.
+ */
+export const pixelateSource = `
+uniform shader content;
+uniform float uCell;
+
+half4 main(float2 pos) {
+  float2 cell = floor(pos / uCell) * uCell + uCell * 0.5;
+  return content.eval(cell);
+}
+`;
+
+export function PixelatePanel({ x, y, width, height }: Box) {
+  const cell = useSharedValue(2);
+
+  useEffect(() => {
+    cell.value = withRepeat(withTiming(10, { duration: 2200 }), -1, true);
+  }, [cell]);
+
+  return (
+    <Group>
+      {/* uCell rides a SharedValue: the cell size grows on the UI thread with
+          no JS per frame and no scene re-encode. sampleRadiusPx stays 0 —
+          snapping reads one pixel per output pixel, never a neighbour. */}
+      <RuntimeShader
+        source={pixelateSource}
+        inputName="content"
+        uniforms={{ uCell: cell }}
+      />
+      <Rect x={x} y={y} width={width} height={height} color="#101725" />
+      <Circle
+        cx={x + width * 0.22}
+        cy={y + height * 0.5}
+        r={Math.min(width * 0.16, height * 0.34)}
+        color="#d98a4a"
+      />
+      <Rect
+        x={x + width * 0.4}
+        y={y + height * 0.24}
+        width={width * 0.18}
+        height={height * 0.52}
+        color="#4f7fd9"
+      />
+      <Text
+        x={x + width * 0.63}
+        y={y + height * 0.58}
+        text="TGFX"
+        fontSize={30}
+        color="#f2f2f2"
+      />
+    </Group>
   );
 }
 

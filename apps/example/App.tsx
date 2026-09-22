@@ -59,6 +59,7 @@ import {
   ChildShaderPanels,
   HelperCollisionPanels,
   SdCirclePanel,
+  PixelatePanel,
   TwoPassFilterPanel,
 } from './src/shaderExamples';
 import { TgfxCameraEffects } from './src/TgfxCameraEffects';
@@ -314,6 +315,13 @@ const Demo = memo(function Demo() {
         height={140}
       >
         <ChildShaderPanels x={0} y={0} width={350} height={120} />
+      </Section>
+
+      <Section
+        label="Runtime shader · filtering a whole group (shapes + text)"
+        height={140}
+      >
+        <PixelatePanel x={0} y={0} width={350} height={120} />
       </Section>
 
       <Section
