@@ -24,6 +24,7 @@
 #include <fstream>
 
 #include "OffscreenRender.hpp"
+#include "RenderFailure.hpp"
 #include "PdfExport.hpp"
 #include "OffscreenSurface.hpp"
 #include "Snapshot.hpp"
@@ -3856,6 +3857,52 @@ void anOffscreenRenderProducesTheSamePixels() {
   CHECK(threw);
 }
 
+/// A shader the driver refuses used to leave renderToImage returning a blank
+/// image, or failing on the readback with no hint of why. The engine reports the
+/// compile failure and the offscreen path raises it once it is out of the draw.
+void aBrokenShaderFailsTheRenderWithTheCompilerMessage() {
+  const std::vector<std::string> strings = {
+      "return NOT_A_FUNCTION(fragCoord);",  // 0: body the backend cannot compile
+      "",                                   // 1: no preamble
+  };
+  Writer w;
+  w.push(1);
+  w.push(1);  // Rect
+  w.pushAnim(0);
+  w.pushAnim(0);
+  w.pushAnim(32);
+  w.pushAnim(32);
+  w.pushRuntimePaint(0xffffffff, {}, 1);
+  auto program = w.finish();
+
+  size_t bytes = 0;
+  std::string message;
+  try {
+    tgfxrn::renderSceneOffscreen(program, strings, 64, 64, 1, /*opaque=*/false,
+                                 /*displayP3=*/false, bytes);
+  } catch (const tgfxrn::RenderFailure& failure) {
+    message = failure.what();
+    // The stage and the driver's own words, not a generic "render failed".
+    CHECK(failure.details.stage == tgfx::RenderErrorStage::FragmentShader);
+    CHECK(!failure.details.message.empty());
+    CHECK(failure.details.source.find("NOT_A_FUNCTION") != std::string::npos);
+  }
+  CHECK(message.rfind("[tgfx] fragment shader failed:", 0) == 0);
+  CHECK(message.find("NOT_A_FUNCTION") != std::string::npos);
+
+  // The context survives: the failure belongs to that render, not the device.
+  Writer plain;
+  plain.push(1);
+  plain.push(1);  // Rect
+  plain.pushAnim(0);
+  plain.pushAnim(0);
+  plain.pushAnim(32);
+  plain.pushAnim(32);
+  plain.pushPaint(0xff0000ff, false);
+  CHECK(tgfxrn::renderSceneOffscreen(plain.finish(), {}, 64, 64, 1, /*opaque=*/false,
+                                     /*displayP3=*/false, bytes) != nullptr);
+}
+
 /// An offscreen render is colour-managed on both ends. Untagged, tgfx skips the
 /// conversion entirely: the same sRGB red would land byte-identical on a P3
 /// surface, and the pixels would come back with nothing saying which space they
@@ -5832,6 +5879,7 @@ int main() {
   encodingUnpremultipliesAndRejectsLiveFrames();
   anOffscreenSurfaceHitTestsBeforeTheFirstDrain();
   batchClusteringKeepsOverlapOrderAndPixels();
+  aBrokenShaderFailsTheRenderWithTheCompilerMessage();
   std::printf(failures == 0 ? "SceneTest: ok\n" : "SceneTest: %d failure(s)\n",
               failures);
   return failures == 0 ? 0 : 1;

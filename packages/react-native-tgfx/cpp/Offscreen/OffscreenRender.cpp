@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "ImageRegistry.hpp"
+#include "RenderFailure.hpp"
 #include "TgfxScene.hpp"
 #include "tgfx/core/Buffer.h"
 #include "tgfx/core/Canvas.h"
@@ -103,11 +104,28 @@ OffscreenContext::OffscreenContext() {
   }
   // The whole policy: flushAndSubmit purges down to this, so nothing else has to.
   context_->setCacheLimit(ImageRegistry::instance().cacheLimit());
+  // Only the first: one bad program fails again for every draw that uses it,
+  // and the later reports say nothing the first one did not.
+  context_->setErrorCallback([this](const tgfx::RenderError& error) {
+    if (!error_.has_value()) {
+      error_ = error;
+    }
+  });
 }
 
 OffscreenContext::~OffscreenContext() {
   if (context_ != nullptr) {
+    // Before the unlock, so nothing can report into a callback that captured a
+    // `this` about to go out of scope. These never nest, so there is no outer
+    // callback to put back.
+    context_->setErrorCallback({});
     device_->unlock();
+  }
+}
+
+void OffscreenContext::throwIfFailed() const {
+  if (error_.has_value()) {
+    throw RenderFailure(*error_);
   }
 }
 
@@ -145,6 +163,9 @@ std::shared_ptr<tgfx::Image> renderSceneOffscreen(std::span<const double> words,
   renderer.setScene(words, strings);
   renderer.render(canvas, {});
   context->flushAndSubmit(true);
+  // Before the readback: a program that never compiled leaves the pixels
+  // untouched, and "could not read the pixels back" would bury the reason.
+  locked.throwIfFailed();
 
   // Tagged with the surface's space: these pixels outlive this context, and an
   // untagged image is taken for whatever space it is later drawn into.
@@ -189,6 +210,7 @@ RasterizedImage rasterizeRegisteredImage(int32_t handle) {
   canvas->clear(tgfx::Color::Transparent());
   canvas->drawImage(image, 0, 0);
   context->flushAndSubmit(true);
+  locked.throwIfFailed();
 
   auto info = tgfx::ImageInfo::Make(width, height, tgfx::ColorType::RGBA_8888,
                                     tgfx::AlphaType::Premultiplied, 0, space);

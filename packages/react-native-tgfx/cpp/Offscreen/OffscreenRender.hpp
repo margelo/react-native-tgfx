@@ -4,11 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "tgfx/core/ImageInfo.h"
+#include "tgfx/gpu/RenderError.h"
 
 namespace tgfx {
 class Context;
@@ -34,9 +36,18 @@ class OffscreenContext {
     return context_;
   }
 
+  /**
+   * Throws the first shader or pipeline failure the engine reported while this
+   * context was held. Call it after submitting, never from inside a draw: the
+   * engine reports synchronously from within its own call, and unwinding
+   * through it would leave the GPU mid-encode.
+   */
+  void throwIfFailed() const;
+
  private:
   std::shared_ptr<tgfx::Device> device_;
   tgfx::Context* context_ = nullptr;
+  std::optional<tgfx::RenderError> error_;
 };
 
 /**
