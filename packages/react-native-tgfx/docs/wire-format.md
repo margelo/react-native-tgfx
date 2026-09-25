@@ -170,14 +170,3 @@ string array pushed with `setStringValues`.
   slots also count as dynamic, so an ancestor `<Group picture>` stops recording
   rather than freezing the grain at a recorder's identity matrix. An older
   reader would take the mode word for the child count.
-- **31** — image filter kind **4** is a runtime shader over the rasterised
-  drawing: a literal sample radius in drawing pixels, a tile mode, then the
-  same source block shader kind 6 already uses (body, preamble, helper names,
-  and each uniform with its components as anim words). The group flags word also
-  gains bit **32**, which follows the grain block with an **anim** blend mode and
-  one of those filter payloads — that is how a `<RuntimeShader>` inside a
-  `<Group>` filters what the group composited instead of each child separately.
-  Bit 32 implies bit 4, since the filter needs the subtree on one layer to read.
-  Reading the payload is shared with kind 6, so a v30 reader does not merely
-  mis-parse it: it takes the radius word for the next node's kind, and on the
-  group path walks the patch cursor past the blend and every uniform slot.
