@@ -59,8 +59,8 @@ import {
   ChildShaderPanels,
   HelperCollisionPanels,
   SdCirclePanel,
-  PixelatePanel,
-  TwoPassFilterPanel,
+  ProfilePixelationPanel,
+  PosterPrintPanel,
 } from './src/shaderExamples';
 import { TgfxCameraEffects } from './src/TgfxCameraEffects';
 import { TgfxFaceBlur } from './src/TgfxFaceBlur';
@@ -318,17 +318,14 @@ const Demo = memo(function Demo() {
       </Section>
 
       <Section
-        label="Runtime shader · filtering a whole group (shapes + text)"
+        label="Runtime shader · animated profile pixelation"
         height={140}
       >
-        <PixelatePanel x={0} y={0} width={350} height={120} />
+        <ProfilePixelationPanel x={0} y={0} width={350} height={120} />
       </Section>
 
-      <Section
-        label="Runtime shader · filtering what a group drew (two passes)"
-        height={140}
-      >
-        <TwoPassFilterPanel x={0} y={0} width={350} height={120} />
+      <Section label="Runtime shader · two-pass event poster" height={140}>
+        <PosterPrintPanel x={0} y={0} width={350} height={120} />
       </Section>
 
       <ShaderScreenSection />

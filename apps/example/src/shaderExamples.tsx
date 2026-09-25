@@ -1,7 +1,11 @@
 import { useEffect } from 'react';
 import {
+  cancelAnimation,
+  ReduceMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import {
@@ -389,76 +393,96 @@ export function HelperCollisionPanels({ x, y, width, height }: Box) {
 }
 
 /**
- * The smallest useful `<RuntimeShader>`: one pass, one uniform, no nesting.
- *
- * It snaps each coordinate to a cell before sampling, so the whole group —
- * two shapes *and* the text — comes back as one pixelated image. Neither half
- * of that is reachable any other way: text cannot go into an `<ImageShader>`
- * for a `<Shader>` to sample, and no colour filter can read a neighbouring
- * pixel. The group is what makes them one picture rather than three.
+ * Pixelate the portrait and details of a profile card as one image. The header
+ * stays sharp because it sits outside the filtered group.
  */
 export const pixelateSource = `
 uniform shader content;
 uniform float uCell;
 
 half4 main(float2 pos) {
+  if (uCell <= 1.0) {
+    return content.eval(pos);
+  }
   float2 cell = floor(pos / uCell) * uCell + uCell * 0.5;
   return content.eval(cell);
 }
 `;
 
-export function PixelatePanel({ x, y, width, height }: Box) {
-  const cell = useSharedValue(2);
+export function ProfilePixelationPanel({ x, y, width, height }: Box) {
+  const cell = useSharedValue(1);
 
   useEffect(() => {
-    cell.value = withRepeat(withTiming(10, { duration: 2200 }), -1, true);
+    cell.value = withRepeat(
+      withSequence(
+        ReduceMotion.Never,
+        withDelay(650, withTiming(16, { duration: 1800 })),
+        withDelay(650, withTiming(1, { duration: 1800 })),
+      ),
+      -1,
+      false,
+      undefined,
+      ReduceMotion.Never,
+    );
+    return () => cancelAnimation(cell);
   }, [cell]);
 
   return (
     <Group>
-      {/* uCell rides a SharedValue: the cell size grows on the UI thread with
-          no JS per frame and no scene re-encode. sampleRadiusPx stays 0 —
-          snapping reads one pixel per output pixel, never a neighbour. */}
-      <RuntimeShader
-        source={pixelateSource}
-        inputName="content"
-        uniforms={{ uCell: cell }}
-      />
-      <Rect x={x} y={y} width={width} height={height} color="#101725" />
-      <Circle
-        cx={x + width * 0.22}
-        cy={y + height * 0.5}
-        r={Math.min(width * 0.16, height * 0.34)}
-        color="#d98a4a"
-      />
-      <Rect
-        x={x + width * 0.4}
-        y={y + height * 0.24}
-        width={width * 0.18}
-        height={height * 0.52}
-        color="#4f7fd9"
+      <RoundedRect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        r={12}
+        color="#101725"
       />
       <Text
-        x={x + width * 0.63}
-        y={y + height * 0.58}
-        text="TGFX"
-        fontSize={30}
+        x={x + 18}
+        y={y + 27}
+        text="MEMBER PROFILE"
+        fontSize={16}
         color="#f2f2f2"
       />
+      <Group>
+        <RuntimeShader
+          source={pixelateSource}
+          inputName="content"
+          uniforms={{ uCell: cell }}
+          sampleRadiusPx={8}
+        />
+        <RoundedRect
+          x={x + 14}
+          y={y + 37}
+          width={width - 28}
+          height={height - 48}
+          r={8}
+          color="#24354a"
+        />
+        <Circle cx={x + 57} cy={y + 73} r={25} color="#d98a4a" />
+        <Text
+          x={x + 103}
+          y={y + 69}
+          text="MARA K."
+          fontSize={24}
+          color="#ffffff"
+        />
+        <Text
+          x={x + 103}
+          y={y + 94}
+          text="ID 4827 19"
+          fontSize={17}
+          color="#c9d6e5"
+        />
+      </Group>
     </Group>
   );
 }
 
 /**
- * A `<RuntimeShader>` filters pixels that are already drawn, which is what
- * `<Shader>` above cannot do: `BlurPanel` blurs a checkerboard it evaluates
- * inline, because a paint shader has no way to read what is underneath it.
- *
- * Here a gradient is posterized into hard bands, and a second pass softens the
- * result of the first. The order is what makes the nesting legible: softening a
- * gradient changes nothing you can see, so the blur on the band edges below is
- * proof that the outer pass is reading the inner pass's output rather than the
- * original drawing.
+ * A two-pass print effect on a composed event poster. The inner pass reduces
+ * the gradient's palette; the outer pass softens the resulting band edges and
+ * the text together.
  */
 export const softenSource = `
 uniform shader content;
@@ -491,46 +515,50 @@ half4 main(float2 pos) {
 }
 `;
 
-/**
- * Two passes over one composited group. `uRadius` rides a SharedValue, so the
- * kernel widens from the UI thread with no JS per frame and no re-encode.
- */
-export function TwoPassFilterPanel({ x, y, width, height }: Box) {
-  const radius = useSharedValue(0.5);
-
-  useEffect(() => {
-    radius.value = withRepeat(
-      withTiming(3, { duration: 1800 }),
-      -1,
-      /* reverse */ true,
-    );
-  }, [radius]);
-
+export function PosterPrintPanel({ x, y, width, height }: Box) {
   return (
     <Group>
-      {/* Pass 2, over the bands pass 1 produced. sampleRadiusPx covers the
-          kernel's widest reach, so a pixel on the edge has real neighbours
-          to average rather than whatever tileMode would hand it. */}
       <RuntimeShader
         source={softenSource}
         inputName="content"
-        uniforms={{ uRadius: radius }}
-        sampleRadiusPx={3}
+        uniforms={{ uRadius: 1.5 }}
+        sampleRadiusPx={2}
       />
       <Group>
-        {/* Pass 1: a smooth gradient becomes six flat bands. */}
         <RuntimeShader
           source={posterizeSource}
           inputName="content"
-          uniforms={{ uSteps: 6 }}
+          uniforms={{ uSteps: 5 }}
         />
         <Rect x={x} y={y} width={width} height={height}>
           <LinearGradient
             start={{ x, y }}
             end={{ x: x + width, y: y + height }}
-            colors={['#2b6cff', '#c94fd9', '#ff9d4a', '#ffe27a']}
+            colors={['#283475', '#b84c86', '#ffc978']}
           />
         </Rect>
+        <Circle cx={x + 76} cy={y + 60} r={38} color="#ffe29a" />
+        <Rect
+          x={x}
+          y={y + 90}
+          width={width}
+          height={height - 90}
+          color="#24234b"
+        />
+        <Text
+          x={x + 150}
+          y={y + 57}
+          text="NIGHT"
+          fontSize={33}
+          color="#ffffff"
+        />
+        <Text
+          x={x + 150}
+          y={y + 83}
+          text="MARKET · 8 PM"
+          fontSize={15}
+          color="#ffffff"
+        />
       </Group>
     </Group>
   );
