@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <thread>
 
+#include "Log.hpp"
 #include "OffscreenRender.hpp"
 #include "Viewport.hpp"
 #include "tgfx/core/Buffer.h"
@@ -407,19 +408,24 @@ void OffscreenSurface::renderNow() {
       }
       auto* canvas = surface_->getCanvas();
       canvas->clear(opaque_ ? tgfx::Color::Black() : tgfx::Color::Transparent());
-      canvas->save();
-      canvas->concat(rootMatrix(pixelRatio_, zoom, offsetX, offsetY));
-      scene_.render(canvas, drawValues_, drawStringValues_, drawStringGen_,
-                    drawStringPushed_);
-      canvas->restore();
+      {
+        // Scoped, not save()/restore(): this surface outlives the frame, so a
+        // throw out of render() would leave its canvas one save deep forever.
+        tgfx::AutoCanvasRestore restore(canvas);
+        canvas->concat(rootMatrix(pixelRatio_, zoom, offsetX, offsetY));
+        scene_.render(canvas, drawValues_, drawStringValues_, drawStringGen_,
+                      drawStringPushed_);
+      }
 
       if (saves.empty() && images.empty()) {
         // GPU-resident between flushes: submit without waiting, no readback.
         context->flushAndSubmit(false);
+        locked.throwIfFailed();
         return;
       }
       // A readback was asked for: wait for the pass, then read the frame once.
       context->flushAndSubmit(true);
+      locked.throwIfFailed();
       info = tgfx::ImageInfo::Make(
           surface_->width(), surface_->height(), tgfx::ColorType::RGBA_8888,
           opaque_ ? tgfx::AlphaType::Opaque : tgfx::AlphaType::Premultiplied, 0,
@@ -435,8 +441,14 @@ void OffscreenSurface::renderNow() {
   }
   // The context lock is released; now the callbacks.
   if (!failure.empty() || pixels == nullptr) {
-    failOutputs(saves, images,
-                failure.empty() ? "[tgfx] offscreen surface: no pixels" : failure);
+    auto message = failure.empty() ? "[tgfx] offscreen surface: no pixels" : failure;
+    if (saves.empty() && images.empty()) {
+      // Nothing was waiting on this frame, so there is nobody to hand the
+      // failure to. Logging it beats a frame that silently never draws.
+      TGFXRN_LOGW("%s", message.c_str());
+      return;
+    }
+    failOutputs(saves, images, message);
     return;
   }
   for (auto& callback : images) {

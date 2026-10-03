@@ -25,8 +25,11 @@
 namespace tgfx {
 class Canvas;
 class ColorFilter;
+class ColorSpace;
 class Image;
 class ImageFilter;
+class Layer;
+class Matrix3D;
 class Shader;
 class Typeface;
 }  // namespace tgfx
@@ -34,7 +37,7 @@ class Typeface;
 namespace tgfxrn {
 
 /// Wire-format version, mirrored by SCENE_VERSION in src/compiler/writer.ts.
-inline constexpr double kSceneVersion = 30;
+inline constexpr double kSceneVersion = 32;
 
 /// How an image is scaled into its destination rect; see fitRects() in TgfxScene.cpp.
 enum class Fit { Fill = 0, Contain, Cover, FitWidth, FitHeight, None, ScaleDown };
@@ -107,6 +110,22 @@ struct RuntimeShaderCmd {
   std::shared_ptr<tgfx::Shader> build(std::span<const double> values) const;
 };
 
+/**
+ * A runtime shader used as an image filter: it samples the rasterised drawing
+ * as TGFX_CHILD_0 rather than painting one. Its uniforms animate from slots;
+ * the filter itself is immutable, so a changed uniform rebuilds it.
+ */
+struct RuntimeImageFilterCmd {
+  RuntimeShaderCmd shader;
+  float sampleRadiusPx = 0;
+  tgfx::TileMode tileMode = tgfx::TileMode::Clamp;
+  mutable std::shared_ptr<tgfx::ImageFilter> cached;
+  mutable std::vector<float> cachedValues;
+
+  bool animated() const;
+  std::shared_ptr<tgfx::ImageFilter> build(std::span<const double> values) const;
+};
+
 /// A gradient whose geometry, stops or stop colours carry value slots.
 struct GradientShaderCmd {
   /// 0 linear, 1 radial, 2 sweep, 3 diamond — the wire's shader kinds.
@@ -163,7 +182,7 @@ struct ColorFilterCmd {
 
 /// An image filter (blur / drop shadow) whose parameters may carry value slots.
 struct ImageFilterCmd {
-  /// 0 blur, 1 dropShadow, 2 compose, 3 colorFilter.
+  /// 0 blur, 1 dropShadow, 2 compose, 3 colorFilter, 4 runtimeShader.
   int kind = 0;
   AnimF blurX{};
   AnimF blurY{};
@@ -180,6 +199,8 @@ struct ImageFilterCmd {
   /// Kind 3: a colour filter placed in the image chain, so it runs *after*
   /// whatever precedes it rather than on the paint before the draw.
   std::shared_ptr<ColorFilterCmd> colorFilter;
+  /// Kind 4: a runtime shader over the rasterised drawing.
+  std::shared_ptr<RuntimeImageFilterCmd> runtimeShader;
   /// As on ColorFilterCmd: a static subtree of an animated chain is built once.
   mutable std::shared_ptr<tgfx::ImageFilter> cached;
 
@@ -241,7 +262,10 @@ struct PaintCmd {
   }
 };
 
-/// type: 0 translate(a=x,b=y), 1 scale(a=x,b=y), 2 rotate(a), 3 skewX(a), 4 skewY(a)
+/// type: 0 translate(a=x,b=y), 1 scale(a=x,b=y), 2 rotate(a), 3 skewX(a), 4 skewY(a),
+/// 5 rotateX(a), 6 rotateY(a), 7 perspective(a), 8 translateZ(a). 5 and up make the group 3D.
+inline constexpr int kFirst3DOp = 5;
+
 struct TransformOpCmd {
   int type = 0;
   AnimF a;
@@ -327,6 +351,13 @@ struct PathEffectCmd {
   void apply(tgfx::Path* path, std::span<const double> v) const;
 };
 
+/// One rasterised run of a 3D layer, kept while what it draws is static.
+struct LayerContent {
+  std::shared_ptr<tgfx::Image> image;
+  tgfx::Rect bounds = tgfx::Rect::MakeEmpty();
+  float scale = 0;
+};
+
 struct DrawCmd {
   enum Kind {
     Group, Rect, RRect, Oval, Circle, Line, Path, Image, Text, Fill, CameraFrame, Mask, Atlas,
@@ -362,6 +393,11 @@ struct DrawCmd {
   mutable std::shared_ptr<tgfx::Picture> picture;
   /// Group only: behind a pointer so an ungrained group costs one word.
   std::shared_ptr<GrainCmd> grain;
+  /// Group only: a runtime shader over what the group composited. Implies
+  /// `layer`, since the filter needs the subtree's pixels in one place.
+  std::shared_ptr<RuntimeImageFilterCmd> runtimeFilter;
+  /// The blend the filtered layer composites with; unused without a filter.
+  AnimF runtimeBlend{3, -1};
   AnimF layerAlpha{1, -1};
   tgfx::Rect clipRect = tgfx::Rect::MakeEmpty();
   float clipRadiusX = 0;
@@ -378,6 +414,13 @@ struct DrawCmd {
   bool hasMatrix = false;
   tgfx::Matrix matrix = tgfx::Matrix::I();
   std::vector<TransformOpCmd> ops;
+  bool threeD = false;
+  bool preserve3D = false;
+  /// Read-time: something in this subtree resolves per frame.
+  bool dynamic = false;
+  /// Read-time: a <Fill> in this subtree, which has no bounds of its own.
+  bool fills = false;
+  mutable std::vector<LayerContent> layerContents;
   std::vector<DrawCmd> children;
 
   tgfx::Path path;
@@ -476,18 +519,42 @@ class SceneRenderer {
   mutable std::mutex programMutex_;
 
   bool readNode(SceneReader& reader, DrawCmd& cmd, int depth);
+  bool readNodeFields(SceneReader& reader, DrawCmd& cmd, int depth);
   void readTextSpec(SceneReader& reader, TextSpec& spec);
   void readTextRuns(SceneReader& reader, TextCmd& text);
   void readPaint(SceneReader& reader, PaintCmd& paint);
   void readFilters(SceneReader& reader, PaintCmd& paint);
   std::shared_ptr<ColorFilterCmd> readColorFilterCmd(SceneReader& reader, int depth);
   std::shared_ptr<ImageFilterCmd> readImageFilterCmd(SceneReader& reader, int depth);
+  std::shared_ptr<RuntimeImageFilterCmd> readRuntimeImageFilter(SceneReader& reader);
   std::shared_ptr<tgfx::Shader> readShader(SceneReader& reader, PaintCmd* out,
                                            int depth = 0);
 
   void drawCmd(tgfx::Canvas* canvas, const DrawCmd& cmd, std::span<const double> values,
                std::span<const std::string> strings, uint64_t stringGen,
                std::span<const uint8_t> stringPushed, tgfx::Paint& paint) const;
+
+  void drawGroupBody(tgfx::Canvas* canvas, const DrawCmd& cmd, std::span<const double> values,
+                     std::span<const std::string> strings, uint64_t stringGen,
+                     std::span<const uint8_t> stringPushed, tgfx::Paint& paint) const;
+
+  struct Layer3DArgs {
+    float canvasScale = 1;
+    std::shared_ptr<tgfx::ColorSpace> colorSpace;
+    tgfx::Rect canvasRect = tgfx::Rect::MakeEmpty();
+    std::span<const double> values;
+    std::span<const std::string> strings;
+    uint64_t stringGen = 0;
+    std::span<const uint8_t> stringPushed;
+    tgfx::Paint* paint = nullptr;
+  };
+
+  std::shared_ptr<tgfx::Layer> buildLayer3D(const DrawCmd& cmd, const tgfx::Matrix3D& parent,
+                                            const Layer3DArgs& args) const;
+
+  void addLayerContent(tgfx::Layer* layer, const DrawCmd& owner, size_t slot,
+                       const DrawCmd* body, std::span<const DrawCmd* const> run,
+                       const tgfx::Matrix3D& placed, const Layer3DArgs& args) const;
 };
 
 }  // namespace tgfxrn

@@ -59,11 +59,14 @@ import {
   ChildShaderPanels,
   HelperCollisionPanels,
   SdCirclePanel,
+  ProfilePixelationPanel,
+  PosterPrintPanel,
 } from './src/shaderExamples';
 import { TgfxCameraEffects } from './src/TgfxCameraEffects';
 import { TgfxFaceBlur } from './src/TgfxFaceBlur';
 import { LittlePrinceScreen } from './src/littlePrince';
 import { ScrollableShapesScreen } from './src/scrollableShapes';
+import { CubeScreen } from './src/cubeScreen';
 
 // Memoised: the tab switch re-renders Screens, and re-rendering the hidden
 // gallery's dozens of canvases is pure waste on the camera-start path.
@@ -315,6 +318,17 @@ const Demo = memo(function Demo() {
         <ChildShaderPanels x={0} y={0} width={350} height={120} />
       </Section>
 
+      <Section
+        label="Runtime shader · animated profile pixelation"
+        height={140}
+      >
+        <ProfilePixelationPanel x={0} y={0} width={350} height={120} />
+      </Section>
+
+      <Section label="Runtime shader · two-pass event poster" height={140}>
+        <PosterPrintPanel x={0} y={0} width={350} height={120} />
+      </Section>
+
       <ShaderScreenSection />
 
       <View style={styles.section}>
@@ -393,6 +407,7 @@ const SCREENS = [
   'effects',
   'prince',
   'shapes',
+  'cube',
 ] as const;
 type Screen = (typeof SCREENS)[number];
 
@@ -449,6 +464,11 @@ function Screens() {
       {screen === 'shapes' ? (
         <View style={styles.screenDark} testID="screen-shapes">
           <ScrollableShapesScreen />
+        </View>
+      ) : null}
+      {screen === 'cube' ? (
+        <View style={styles.screenDark} testID="screen-cube">
+          <CubeScreen />
         </View>
       ) : null}
       <View style={[styles.tabs, { paddingBottom: insets.bottom + 8 }]}>
