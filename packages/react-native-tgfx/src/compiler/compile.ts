@@ -97,7 +97,17 @@ function mulOpacity(inherited: Opacity, own: unknown): Opacity {
   return resolveNumber(inherited, 1) * resolveNumber(own, 1)
 }
 
-const Op = { translate: 0, scale: 1, rotate: 2, skewX: 3, skewY: 4 } as const
+const Op = {
+  translate: 0,
+  scale: 1,
+  rotate: 2,
+  skewX: 3,
+  skewY: 4,
+  rotateX: 5,
+  rotateY: 6,
+  perspective: 7,
+  translateZ: 8,
+} as const
 
 /** Bit 64 on the kind word: a visibility word follows. Absent costs nothing. */
 const KIND_VISIBLE = 64
@@ -866,6 +876,22 @@ function writeOps(
       w.push(Op.skewY)
       angle(w, o.skewY)
       w.push(0)
+    } else if ('rotateX' in o) {
+      w.push(Op.rotateX)
+      angle(w, o.rotateX)
+      w.push(0)
+    } else if ('rotateY' in o) {
+      w.push(Op.rotateY)
+      angle(w, o.rotateY)
+      w.push(0)
+    } else if ('perspective' in o) {
+      w.push(Op.perspective)
+      w.pushAnim(o.perspective)
+      w.push(0)
+    } else if ('translateZ' in o) {
+      w.push(Op.translateZ)
+      w.pushAnim(o.translateZ)
+      w.push(0)
     } else {
       continue
     }
@@ -1015,8 +1041,10 @@ function writeGroup(
     childCtx.paint = { ...childCtx.paint, blendMode: undefined }
   }
   const picture = p.picture === true
+  const preserve3d = p.preserve3d === true
   const grain = node.children.find((c) => c.type === NodeType.FilmGrain)
-  const extended = clip != null || layer || picture || grain != null
+  const extended =
+    clip != null || layer || picture || grain != null || preserve3d
   pushKind(w, extended ? Kind.GroupLayer : Kind.Group, p)
   const opCountAt = w.reserve()
   w.patch(
@@ -1028,7 +1056,8 @@ function writeGroup(
     (p.invertClip === true ? 2 : 0) |
     (layer ? 4 : 0) |
     (grain != null ? 16 : 0) |
-    (runtimeFilter !== undefined ? 32 : 0)
+    (preserve3d ? 32 : 0) |
+    (runtimeFilter !== undefined ? 64 : 0)
   let flagsAt = -1
   if (extended) {
     flagsAt = w.reserve()
