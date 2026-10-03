@@ -1028,6 +1028,92 @@ void aMiterLimitCutsBackASharpSpike() {
   CHECK(opaqueAt(spike(0), 32, 2));
 }
 
+/// A <RuntimeShader> in a group filters what the group composited, rather than
+/// each child on its own: the shader samples the drawing as TGFX_CHILD_0.
+void aRuntimeShaderFiltersTheWholeGroup() {
+  // Strings: 0 = body, 1 = preamble. The body swaps red and blue, so a filter
+  // that ran is visible in the channels rather than merely in "something drew".
+  const std::vector<std::string> strings = {"return TGFX_CHILD_0(fragCoord).bgra;", ""};
+
+  // kind 13 (GroupLayer): opCount, flags, [clip], [layer alpha], [grain],
+  // [blend + runtime filter], childCount, children. Flag 4 layer | 64 filter.
+  auto scene = [&](bool filtered) {
+    Writer w;
+    w.push(1);
+    w.push(13);
+    w.push(0);              // no transform ops
+    w.push(filtered ? (4 | 64) : 0);
+    if (filtered) {
+      w.pushAnim(1);        // layer alpha
+      w.pushAnim(3);        // SrcOver
+      w.push(0);            // sampleRadiusPx
+      w.push(0);            // tileMode clamp
+      w.push(0);            // body
+      w.push(1);            // preamble
+      w.push(0);            // no helper functions
+      w.push(0);            // no uniforms
+    }
+    w.push(2);              // two children, composited together before filtering
+    w.push(1);              // Rect
+    w.pushAnim(0);
+    w.pushAnim(0);
+    w.pushAnim(32);
+    w.pushAnim(32);
+    w.pushPaint(0xffff0000, false);  // red — packed 0xAARRGGBB
+    w.push(1);              // Rect
+    w.pushAnim(32);
+    w.pushAnim(0);
+    w.pushAnim(16);
+    w.pushAnim(32);
+    w.pushPaint(0xff00ff00, false);  // green
+    return render(w.finish(), strings, {});
+  };
+
+  auto plain = scene(false);
+  auto filtered = scene(true);
+  CHECK(pixelAt(plain, 16, 16)[0] == 255);      // red where it was drawn
+  CHECK(pixelAt(plain, 40, 16)[1] == 255);      // green beside it
+
+  // Both children came through the one filter: red reads blue, green is its own
+  // swap of itself, and the untouched corner stays empty.
+  CHECK(pixelAt(filtered, 16, 16)[2] == 255);
+  CHECK(pixelAt(filtered, 16, 16)[0] == 0);
+  CHECK(pixelAt(filtered, 40, 16)[1] == 255);
+  CHECK(!opaqueAt(filtered, 16, 48));
+}
+
+/// The group's layer alpha still applies on top of the filter's own result.
+void aFilteredGroupKeepsItsLayerAlpha() {
+  const std::vector<std::string> strings = {"return TGFX_CHILD_0(fragCoord);", ""};
+  auto scene = [&](double alpha) {
+    Writer w;
+    w.push(1);
+    w.push(13);
+    w.push(0);
+    w.push(4 | 64);
+    w.pushAnim(alpha);
+    w.pushAnim(3);
+    w.push(0);
+    w.push(0);
+    w.push(0);
+    w.push(1);
+    w.push(0);
+    w.push(0);
+    w.push(1);
+    w.push(1);  // Rect
+    w.pushAnim(0);
+    w.pushAnim(0);
+    w.pushAnim(32);
+    w.pushAnim(32);
+    w.pushPaint(0xffff0000, false);  // red
+    return render(w.finish(), strings, {});
+  };
+  // An identity filter at full alpha leaves the colour alone; at half it halves it.
+  CHECK(pixelAt(scene(1), 16, 16)[0] == 255);
+  auto half = pixelAt(scene(0.5), 16, 16)[0];
+  CHECK(half > 120 && half < 136);
+}
+
 /// A group clip confines its subtree; inverting it keeps exactly the complement.
 void aGroupClipConfinesItsSubtree() {
   // kind 13 (GroupLayer): opCount, flags, clip block, [alpha], childCount, children.
@@ -5744,6 +5830,231 @@ void anOffscreenSurfaceHitTestsBeforeTheFirstDrain() {
   surface->dispose();
 }
 
+/// Transform ops: translate(32,32) then perspective 200, so a 3D group centres on the canvas.
+void push3DOps(Writer& w, std::initializer_list<std::array<double, 3>> extra, int rotateSlot = -1) {
+  w.push(2 + static_cast<double>(extra.size()));
+  w.push(0);
+  w.pushAnim(32);
+  w.pushAnim(32);
+  w.push(7);
+  w.pushAnim(200);
+  w.pushAnim(0);
+  for (const auto& op : extra) {
+    w.push(op[0]);
+    w.pushAnim(op[1], op[0] == 6 ? rotateSlot : -1);
+    w.pushAnim(op[2]);
+  }
+}
+
+void pushPlane(Writer& w, std::initializer_list<std::array<double, 3>> ops, uint32_t color,
+               double half = 16) {
+  w.push(0);
+  w.push(static_cast<double>(ops.size()));
+  for (const auto& op : ops) {
+    w.push(op[0]);
+    w.pushAnim(op[1]);
+    w.pushAnim(op[2]);
+  }
+  w.push(1);
+  w.push(1);
+  w.pushAnim(-half);
+  w.pushAnim(-half);
+  w.pushAnim(half * 2);
+  w.pushAnim(half * 2);
+  w.pushPaint(color, false);
+}
+
+/// Clip, group opacity and the rest flatten preserve3d instead of being dropped by it.
+void preserve3dKeepsTheGroupsOwnClipAndLayer() {
+  auto scene = [](int flags) {
+    Writer w;
+    w.push(1);
+    w.push(13);
+    push3DOps(w, {});
+    w.push(32 | flags);
+    if ((flags & 1) != 0) {
+      w.push(1);
+      w.push(-16);
+      w.push(-16);
+      w.push(16);
+      w.push(16);
+    }
+    if ((flags & 4) != 0) {
+      w.pushAnim(0.5);
+    }
+    w.push(1);
+    pushPlane(w, {{6, 0, 0}}, 0xffff0000);
+    return render(w.finish(), {}, {});
+  };
+  auto plain = scene(0);
+  CHECK(alphaAt(plain, 32, 32) == 255);
+  auto faded = scene(4);
+  CHECK(alphaAt(faded, 32, 32) > 100 && alphaAt(faded, 32, 32) < 160);
+  auto clipped = scene(1);
+  CHECK(opaqueAt(clipped, 24, 24));
+  CHECK(!opaqueAt(clipped, 40, 40));
+}
+
+/// A plane of a 3D context keeps its own clip and layer opacity.
+void aPlaneOfA3DContextKeepsItsClipAndLayer() {
+  Writer w;
+  w.push(1);
+  w.push(13);
+  push3DOps(w, {});
+  w.push(32);
+  w.push(1);
+  w.push(13);
+  w.push(1);
+  w.push(6);
+  w.pushAnim(0);
+  w.pushAnim(0);
+  w.push(1 | 4);
+  w.push(1);
+  w.push(-16);
+  w.push(-16);
+  w.push(16);
+  w.push(16);
+  w.pushAnim(0.5);
+  w.push(1);
+  w.push(1);
+  w.pushAnim(-16);
+  w.pushAnim(-16);
+  w.pushAnim(32);
+  w.pushAnim(32);
+  w.pushPaint(0xffff0000, false);
+  auto pixels = render(w.finish(), {}, {});
+  CHECK(alphaAt(pixels, 24, 24) > 100 && alphaAt(pixels, 24, 24) < 160);
+  CHECK(!opaqueAt(pixels, 40, 40));
+}
+
+/// A <Fill> has no bounds of its own; on a plane it still draws.
+void aFillOnA3DPlaneDraws() {
+  Writer w;
+  w.push(1);
+  w.push(13);
+  push3DOps(w, {});
+  w.push(32);
+  w.push(1);
+  w.push(0);
+  w.push(1);
+  w.push(6);
+  w.pushAnim(0.3);
+  w.pushAnim(0);
+  w.push(1);
+  w.push(9);
+  w.pushPaint(0xff3366cc, false);
+  CHECK(opaqueAt(render(w.finish(), {}, {}), 32, 32));
+}
+
+/// perspective 0 is no perspective, not a division by zero that blanks the group.
+void aZeroPerspectiveDrawsFlat() {
+  Writer w;
+  w.push(1);
+  w.push(0);
+  w.push(2);
+  w.push(7);
+  w.pushAnim(0);
+  w.pushAnim(0);
+  w.push(6);
+  w.pushAnim(0);
+  w.pushAnim(0);
+  w.push(1);
+  w.push(1);
+  w.pushAnim(8);
+  w.pushAnim(8);
+  w.pushAnim(32);
+  w.pushAnim(32);
+  w.pushPaint(0xffff0000, false);
+  CHECK(opaqueAt(render(w.finish(), {}, {}), 20, 20));
+}
+
+/// Planes turned edge-on alone face the viewer once composed; the nearer one is hit first.
+void hitTestComposesA3DContextNearestFirst() {
+  constexpr double kQuarter = 1.5707963267948966;
+  Writer w;
+  w.push(1);
+  w.push(13);
+  push3DOps(w, {{6, -kQuarter, 0}});
+  w.push(32);
+  w.push(2);
+  pushPlane(w, {{6, kQuarter, 0}, {8, 10, 0}}, 0xffff0000);
+  pushPlane(w, {{6, kQuarter, 0}, {8, -10, 0}}, 0xff0000ff);
+  tgfxrn::SceneRenderer renderer;
+  renderer.setScene(w.finish(), {});
+  auto hits = renderer.hitTest(32, 32, false, {});
+  CHECK(hits.size() == 8);
+  CHECK(hits.size() >= 4 && hits[0] == 3 && hits[1] == 0 && hits[2] == 0 && hits[3] == 0);
+  CHECK(hits.size() == 8 && hits[4] == 3 && hits[5] == 0 && hits[6] == 1 && hits[7] == 0);
+  auto pixels = drawFrame(renderer, {});
+  CHECK(pixelAt(pixels, 32, 32)[0] > 200 && pixelAt(pixels, 32, 32)[2] < 50);
+}
+
+/// Static plane content survives the context turning; live content still changes per frame.
+void a3DPlaneRedrawsLiveContentAndKeepsStaticContent() {
+  Writer w;
+  w.push(1);
+  w.push(13);
+  push3DOps(w, {{6, 0, 0}}, 0);
+  w.push(32);
+  w.push(2);
+  pushPlane(w, {{8, 0, 0}}, 0xff00ff00, 8);
+  w.push(0);
+  w.push(1);
+  w.push(8);
+  w.pushAnim(1);
+  w.pushAnim(0);
+  w.push(1);
+  w.push(1);
+  w.pushAnim(-16);
+  w.pushAnim(-16);
+  w.pushAnim(32);
+  w.pushAnim(6);
+  w.pushLiveColorPaint(0xffff0000, {{{1, 1}, {0, 2}, {0, 3}, {1, -1}}});
+  tgfxrn::SceneRenderer renderer;
+  renderer.setScene(w.finish(), {});
+  auto first = drawFrame(renderer, {0, 1, 0, 0});
+  CHECK(opaqueAt(first, 32, 32));
+  CHECK(pixelAt(first, 32, 18)[0] > 200);
+  auto second = drawFrame(renderer, {0.6, 0, 0, 1});
+  CHECK(opaqueAt(second, 32, 32));
+  CHECK(inkPixels(second) < inkPixels(first));
+  CHECK(pixelAt(second, 32, 18)[2] > 200 && pixelAt(second, 32, 18)[0] < 50);
+}
+
+/// A filtered group inside a preserve3d context is a plane drawn through its filter.
+void aRuntimeShaderPlaneFiltersInsideA3DContext() {
+  const std::vector<std::string> strings = {"return TGFX_CHILD_0(fragCoord).bgra;", ""};
+  Writer w;
+  w.push(1);
+  w.push(13);
+  push3DOps(w, {});
+  w.push(32);
+  w.push(1);
+  w.push(13);
+  w.push(1);
+  w.push(6);
+  w.pushAnim(0.2);
+  w.pushAnim(0);
+  w.push(4 | 64);
+  w.pushAnim(1);
+  w.pushAnim(3);
+  w.push(0);
+  w.push(0);
+  w.push(0);
+  w.push(1);
+  w.push(0);
+  w.push(0);
+  w.push(1);
+  w.push(1);
+  w.pushAnim(-16);
+  w.pushAnim(-16);
+  w.pushAnim(32);
+  w.pushAnim(32);
+  w.pushPaint(0xffff0000, false);
+  auto pixels = render(w.finish(), strings, {});
+  CHECK(pixelAt(pixels, 32, 32)[2] > 200 && pixelAt(pixels, 32, 32)[0] < 50);
+}
+
 int main() {
   if (device() == nullptr) {
     std::printf("no GPU device available\n");
@@ -5879,7 +6190,16 @@ int main() {
   encodingUnpremultipliesAndRejectsLiveFrames();
   anOffscreenSurfaceHitTestsBeforeTheFirstDrain();
   batchClusteringKeepsOverlapOrderAndPixels();
+  aRuntimeShaderFiltersTheWholeGroup();
+  aFilteredGroupKeepsItsLayerAlpha();
   aBrokenShaderFailsTheRenderWithTheCompilerMessage();
+  preserve3dKeepsTheGroupsOwnClipAndLayer();
+  aPlaneOfA3DContextKeepsItsClipAndLayer();
+  aFillOnA3DPlaneDraws();
+  aZeroPerspectiveDrawsFlat();
+  hitTestComposesA3DContextNearestFirst();
+  a3DPlaneRedrawsLiveContentAndKeepsStaticContent();
+  aRuntimeShaderPlaneFiltersInsideA3DContext();
   std::printf(failures == 0 ? "SceneTest: ok\n" : "SceneTest: %d failure(s)\n",
               failures);
   return failures == 0 ? 0 : 1;

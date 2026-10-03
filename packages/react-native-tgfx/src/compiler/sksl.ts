@@ -7,6 +7,8 @@ export interface TranspiledShader {
   readonly functionNames: readonly string[]
   readonly uniformNames: readonly string[]
   readonly uniformSizes: Readonly<Record<string, number>>
+  /** GLSL type per uniform, so a caller can reject what it cannot animate. */
+  readonly uniformTypes: Readonly<Record<string, string>>
   readonly childNames: readonly string[]
 }
 
@@ -125,6 +127,7 @@ const CACHE = new Map<string, TranspiledShader>()
 function transpile(source: string): TranspiledShader {
   const uniformNames: string[] = []
   const uniformSizes: Record<string, number> = {}
+  const uniformTypes: Record<string, string> = {}
   const childNames: string[] = []
   // Stripped first, so a commented-out `uniform` is not collected and prose cannot trip the guard.
   const withoutComments = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ')
@@ -141,6 +144,7 @@ function transpile(source: string): TranspiledShader {
       }
       uniformNames.push(name)
       uniformSizes[name] = info.size
+      uniformTypes[name] = info.glsl
       return ''
     }
   )
@@ -203,6 +207,7 @@ function transpile(source: string): TranspiledShader {
     functionNames: names,
     uniformNames,
     uniformSizes,
+    uniformTypes,
     childNames,
   }
 }

@@ -147,6 +147,7 @@ add_library(${PACKAGE_NAME} SHARED
         src/main/cpp/PlatformAssetAndroid.cpp
         ../cpp/Core/Prewarm.cpp
         ../cpp/Scene/TgfxScene.cpp
+        ../cpp/Scene/RuntimeImageFilter.cpp
         ../cpp/Path/SvgPath.cpp
         ../cpp/Image/SvgImage.cpp
         ../cpp/Render/TgfxRenderer.cpp

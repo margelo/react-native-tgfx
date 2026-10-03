@@ -4,6 +4,7 @@ import type {
   BlendColorProps,
   BlendProps,
   BlurProps,
+  RuntimeShaderProps,
   ColorShaderProps,
   CornerPathEffectProps,
   DashPathEffectProps,
@@ -52,6 +53,15 @@ export const FractalNoise = NodeType.FractalNoise as unknown as FC<NoiseProps>
  * supplies a value per declared uniform.
  */
 export const Shader = NodeType.Shader as unknown as FC<ShaderProps>
+
+/**
+ * A runtime shader over pixels that are already drawn, not a paint source —
+ * that is `<Shader>`. Inside a `<Group>` it filters what the group composited;
+ * on a shape it joins the filter chain beside `<Blur>`. See
+ * {@link RuntimeShaderProps}.
+ */
+export const RuntimeShader =
+  NodeType.RuntimeShader as unknown as FC<RuntimeShaderProps>
 
 /** Perlin turbulence shader — like fractal noise but with sharper patterns. */
 export const Turbulence = NodeType.Turbulence as unknown as FC<NoiseProps>

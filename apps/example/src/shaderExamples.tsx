@@ -1,9 +1,23 @@
+import { useEffect } from 'react';
 import {
+  cancelAnimation,
+  ReduceMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import {
+  Circle,
+  Group,
   ImageShader,
   LinearGradient,
   Rect,
   RoundedRect,
+  RuntimeShader,
   Shader,
+  Text,
   useImage,
 } from 'react-native-tgfx';
 import type { NodeHandle } from 'react-native-tgfx';
@@ -375,5 +389,177 @@ export function HelperCollisionPanels({ x, y, width, height }: Box) {
         );
       })}
     </>
+  );
+}
+
+/**
+ * Pixelate the portrait and details of a profile card as one image. The header
+ * stays sharp because it sits outside the filtered group.
+ */
+export const pixelateSource = `
+uniform shader content;
+uniform float uCell;
+
+half4 main(float2 pos) {
+  if (uCell <= 1.0) {
+    return content.eval(pos);
+  }
+  float2 cell = floor(pos / uCell) * uCell + uCell * 0.5;
+  return content.eval(cell);
+}
+`;
+
+export function ProfilePixelationPanel({ x, y, width, height }: Box) {
+  const cell = useSharedValue(1);
+
+  useEffect(() => {
+    cell.value = withRepeat(
+      withSequence(
+        ReduceMotion.Never,
+        withDelay(650, withTiming(16, { duration: 1800 })),
+        withDelay(650, withTiming(1, { duration: 1800 })),
+      ),
+      -1,
+      false,
+      undefined,
+      ReduceMotion.Never,
+    );
+    return () => cancelAnimation(cell);
+  }, [cell]);
+
+  return (
+    <Group>
+      <RoundedRect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        r={12}
+        color="#101725"
+      />
+      <Text
+        x={x + 18}
+        y={y + 27}
+        text="MEMBER PROFILE"
+        fontSize={16}
+        color="#f2f2f2"
+      />
+      <Group>
+        <RuntimeShader
+          source={pixelateSource}
+          inputName="content"
+          uniforms={{ uCell: cell }}
+          sampleRadiusPx={8}
+        />
+        <RoundedRect
+          x={x + 14}
+          y={y + 37}
+          width={width - 28}
+          height={height - 48}
+          r={8}
+          color="#24354a"
+        />
+        <Circle cx={x + 57} cy={y + 73} r={25} color="#d98a4a" />
+        <Text
+          x={x + 103}
+          y={y + 69}
+          text="MARA K."
+          fontSize={24}
+          color="#ffffff"
+        />
+        <Text
+          x={x + 103}
+          y={y + 94}
+          text="ID 4827 19"
+          fontSize={17}
+          color="#c9d6e5"
+        />
+      </Group>
+    </Group>
+  );
+}
+
+/**
+ * A two-pass print effect on a composed event poster. The inner pass reduces
+ * the gradient's palette; the outer pass softens the resulting band edges and
+ * the text together.
+ */
+export const softenSource = `
+uniform shader content;
+uniform float uRadius;
+
+half4 main(float2 pos) {
+  half4 acc = half4(0.0);
+  // Constant bounds: GLSL ES will not unroll a loop it cannot size.
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      float2 at = pos + float2(float(dx), float(dy)) * uRadius;
+      acc += content.eval(at);
+    }
+  }
+  return acc / 9.0;
+}
+`;
+
+export const posterizeSource = `
+uniform shader content;
+uniform float uSteps;
+
+half4 main(float2 pos) {
+  half4 c = content.eval(pos);
+  // Unpremultiply before quantising, or the steps land on alpha-scaled values.
+  float a = max(float(c.a), 0.0001);
+  float3 rgb = float3(c.rgb) / a;
+  rgb = floor(rgb * uSteps + 0.5) / uSteps;
+  return half4(half3(rgb * a), c.a);
+}
+`;
+
+export function PosterPrintPanel({ x, y, width, height }: Box) {
+  return (
+    <Group>
+      <RuntimeShader
+        source={softenSource}
+        inputName="content"
+        uniforms={{ uRadius: 1.5 }}
+        sampleRadiusPx={2}
+      />
+      <Group>
+        <RuntimeShader
+          source={posterizeSource}
+          inputName="content"
+          uniforms={{ uSteps: 5 }}
+        />
+        <Rect x={x} y={y} width={width} height={height}>
+          <LinearGradient
+            start={{ x, y }}
+            end={{ x: x + width, y: y + height }}
+            colors={['#283475', '#b84c86', '#ffc978']}
+          />
+        </Rect>
+        <Circle cx={x + 76} cy={y + 60} r={38} color="#ffe29a" />
+        <Rect
+          x={x}
+          y={y + 90}
+          width={width}
+          height={height - 90}
+          color="#24234b"
+        />
+        <Text
+          x={x + 150}
+          y={y + 57}
+          text="NIGHT"
+          fontSize={33}
+          color="#ffffff"
+        />
+        <Text
+          x={x + 150}
+          y={y + 83}
+          text="MARKET · 8 PM"
+          fontSize={15}
+          color="#ffffff"
+        />
+      </Group>
+    </Group>
   );
 }

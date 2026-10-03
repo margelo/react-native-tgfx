@@ -27,6 +27,7 @@ export const NodeType = {
   FractalNoise: 'tgfx_fractalnoise',
   Turbulence: 'tgfx_turbulence',
   Shader: 'tgfx_shader',
+  RuntimeShader: 'tgfx_runtimeshader',
   ImageShader: 'tgfx_imageshader',
   ColorMatrix: 'tgfx_colormatrix',
   BlendColor: 'tgfx_blendcolor',

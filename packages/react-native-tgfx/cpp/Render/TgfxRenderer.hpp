@@ -120,6 +120,7 @@ class TgfxRenderer {
     bool flipY = false;
   };
 
+  void renderScene(tgfx::Canvas* canvas);
   void startSnapshots(tgfx::Context* context);
   void collectSnapshots(tgfx::Context* context);
   std::vector<InFlightSnapshot> takeSnapshots();
@@ -157,6 +158,7 @@ class TgfxRenderer {
   /// Which slots a push has written; unpushed slots keep their compiled literal.
   std::vector<uint8_t> stringPushed_;
   std::vector<uint8_t> drawStringPushed_;
+  bool renderFailureLogged_ = false;
   uint64_t stringGen_ = 0;
   uint64_t drawStringGen_ = 0;
   uint64_t valuesGen_ = 0;
