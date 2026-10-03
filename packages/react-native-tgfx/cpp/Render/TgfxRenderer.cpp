@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <utility>
 
 #include <span>
 
 #include "FontRegistry.hpp"
+#include "Log.hpp"
 #include "SceneHash.hpp"
 #include "SceneStrings.hpp"
 #include "Viewport.hpp"
@@ -402,8 +404,7 @@ bool TgfxRenderer::draw() {
     }
     {
       TGFXRN_TRACE("tgfx.render");
-      scene_.render(canvas, drawValues_, drawStringValues_, drawStringGen_,
-                    drawStringPushed_);
+      renderScene(canvas);
     }
     if (rooted) {
       canvas->restore();
@@ -463,6 +464,20 @@ void TgfxRenderer::updateSnapshotPending() {
   snapshotPending_.store(pending, std::memory_order_release);
 }
 
+// On screen a throwing filter (a non-finite uniform) costs that frame's drawing, never the app.
+void TgfxRenderer::renderScene(tgfx::Canvas* canvas) {
+  int saveCount = canvas->getSaveCount();
+  try {
+    scene_.render(canvas, drawValues_, drawStringValues_, drawStringGen_, drawStringPushed_);
+  } catch (const std::exception& error) {
+    canvas->restoreToCount(saveCount);
+    if (!renderFailureLogged_) {
+      renderFailureLogged_ = true;
+      TGFXRN_LOGW("%s", error.what());
+    }
+  }
+}
+
 void TgfxRenderer::startSnapshots(tgfx::Context* context) {
   std::vector<std::pair<SnapshotRequest, SnapshotCallback>> staged;
   {
@@ -498,8 +513,7 @@ void TgfxRenderer::startSnapshots(tgfx::Context* context) {
     canvas->save();
     canvas->concat(rootMatrix(ratio, drawZoom_, drawViewportX_, drawViewportY_));
   }
-  scene_.render(canvas, drawValues_, drawStringValues_, drawStringGen_,
-                drawStringPushed_);
+  renderScene(canvas);
   if (rooted) {
     canvas->restore();
   }
