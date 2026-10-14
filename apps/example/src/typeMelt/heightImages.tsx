@@ -34,7 +34,8 @@ export async function buildHeightImages(
   const pad = word.strokeWidth / 2 + fontSize * ROUND_EM * 3 + 2;
   const out: HeightImage[] = [];
   try {
-    for (const path of word.paths) {
+    for (let i = 0; i < word.paths.length; i++) {
+      const path = word.paths[i]!;
       const b = pathBounds(path, true);
       const x = b.x - pad;
       const y = b.y - pad;
@@ -49,7 +50,7 @@ export async function buildHeightImages(
             path={path}
             color="white"
             style="stroke"
-            strokeWidth={word.strokeWidth}
+            strokeWidth={word.strokeWidths[i]}
             strokeJoin="round"
           />
         </Group>,

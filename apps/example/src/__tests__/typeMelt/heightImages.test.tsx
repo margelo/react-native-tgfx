@@ -33,6 +33,7 @@ const word = {
   data: { fontSize: 100 },
   paths: ['M0 0', 'M0 0', 'M0 0', 'M0 0'],
   strokeWidth: 10,
+  strokeWidths: [10, 10, 10, 10],
 } as unknown as Word;
 
 test('a failed letter build rejects and frees the tubes already made', async () => {

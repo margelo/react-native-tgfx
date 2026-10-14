@@ -22,28 +22,41 @@ import {
 } from './state';
 
 export const WORD = 'TGFX';
-export const FAMILY = 'PT Serif';
-export const FONT_FILES = [
-  require('../assets/fonts/PT_Serif-Web-Regular.ttf'),
-  require('../assets/fonts/PT_Serif-Web-Bold.ttf'),
-];
+// A tall, condensed caps face, so inflated it reads like the reference's balloon type.
+export const FAMILY = 'Bebas Neue';
+export const FONT_FILES = [require('../assets/fonts/BebasNeue-Regular.ttf')];
+/** Share of the canvas width the word spans, as in the reference. */
+const FILL = 0.86;
+/** Extra room between letters, in font sizes, so their tubes stay apart. */
+const TRACK_EM = 0.06;
+/** Fattening stroke before inflation, in font sizes; the narrow G gets less so its counter stays open. */
+const STROKE_EM = 0.05;
+const STROKE_EM_BY_LETTER: Record<string, number> = { G: 0.02 };
 
 export interface Word {
   data: WordData;
   /** Letter outlines in letter-local points, centred on (0, 0). */
   paths: string[];
-  /** The round-join stroke that fattens the serif face before it is inflated. */
+  /** Per letter: the round-join stroke that fattens it before it is inflated. */
+  strokeWidths: number[];
+  /** The widest of `strokeWidths`, for padding. */
   strokeWidth: number;
 }
 
 export function buildWord(width: number, height: number, seed = 7): Word {
-  const fontSize = Math.min(width * 0.27, height * 0.4);
-  // Extra room between letters, so their tubes stay apart.
-  const track = fontSize * 0.06;
-  const style = { fontFamily: FAMILY, fontWeight: 'bold' as const, fontSize };
+  // Size the word to span FILL of the width, measured once at 100 pt.
+  const em =
+    measureText(WORD, { fontFamily: FAMILY, fontSize: 100 }).width / 100;
+  const fontSize = Math.min(
+    (width * FILL) / (em + TRACK_EM * (LETTERS - 1)),
+    height * 0.5,
+  );
+  const track = fontSize * TRACK_EM;
+  const style = { fontFamily: FAMILY, fontSize };
   const total = measureText(WORD, style).width + track * (LETTERS - 1);
   const left = (width - total) / 2;
-  const baseline = height * 0.48 + fontSize * 0.35;
+  // Caps are about 0.7 em tall: centre them a little above the middle.
+  const baseline = height * 0.42 + fontSize * 0.35;
   const spacing = fontSize * 0.045;
   const rand = mulberry32(seed);
 
@@ -56,6 +69,7 @@ export function buildWord(width: number, height: number, seed = 7): Word {
   const circles = new Float32Array(LETTERS * CIRCLES_PER_LETTER * 2);
   const homes: number[] = [];
   const paths: string[] = [];
+  const strokeWidths: number[] = [];
 
   for (let i = 0; i < LETTERS; i++) {
     const raw = textToPath(WORD[i]!, style);
@@ -69,6 +83,7 @@ export function buildWord(width: number, height: number, seed = 7): Word {
     h[i] = b.height;
     const local = pathTransform(raw, [1, 0, 0, 1, -midX, -midY]);
     paths.push(local);
+    strokeWidths.push(fontSize * (STROKE_EM_BY_LETTER[WORD[i]!] ?? STROKE_EM));
     const contains = (x: number, y: number) => pathContains(local, x, y);
     const box = {
       x: -b.width / 2,
@@ -96,7 +111,8 @@ export function buildWord(width: number, height: number, seed = 7): Word {
     data: {
       width,
       height,
-      floorY: baseline + fontSize * 0.7,
+      // Just below the letters, where the reference's long drips land.
+      floorY: baseline + fontSize * 0.3,
       fontSize,
       cx,
       cy,
@@ -107,11 +123,11 @@ export function buildWord(width: number, height: number, seed = 7): Word {
       anchors,
       circles,
       circleR,
-      // Big enough that a lone droplet survives the blur's threshold.
-      dropR: fontSize * 0.06,
+      dropR: fontSize * 0.035,
       seed,
     },
     paths,
-    strokeWidth: fontSize * 0.1,
+    strokeWidths,
+    strokeWidth: Math.max(...strokeWidths),
   };
 }
