@@ -6,7 +6,7 @@ export const LETTERS = 4;
 export const CHAIN = 16;
 export const ANCHORS_PER_LETTER = 4;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
-export const CIRCLES_PER_LETTER = 6;
+export const CIRCLES_PER_LETTER = 10;
 /** Melt's puddle lives after the drip chains in the sprite buffer. */
 export const POOL_BASE = MAX_ANCHORS * CHAIN;
 export const POOL_CAP = 400;

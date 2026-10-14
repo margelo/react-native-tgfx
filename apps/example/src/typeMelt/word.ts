@@ -103,7 +103,8 @@ export function buildWord(width: number, height: number, seed = 7): Word {
       pickSpread(pts, CIRCLES_PER_LETTER),
       i * CIRCLES_PER_LETTER * 2,
     );
-    circleR[i] = Math.min(b.width, b.height) * 0.2;
+    // Condensed letters are tall and narrow: ten circles this size cover the outline.
+    circleR[i] = Math.min(b.width, b.height) * 0.28;
   }
 
   const homeCount = Math.min(CAP, homes.length / 2);
