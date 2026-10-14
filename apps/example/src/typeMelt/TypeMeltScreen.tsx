@@ -102,14 +102,19 @@ export function TypeMeltScreen() {
     }
     let live = true;
     let built: HeightImage[] = [];
-    buildHeightImages(word, PixelRatio.get()).then(images => {
-      built = images;
-      if (live) {
-        setHeights(images);
-      } else {
-        images.forEach(h => h.image.dispose());
-      }
-    });
+    buildHeightImages(word, PixelRatio.get())
+      .then(images => {
+        built = images;
+        if (live) {
+          setHeights(images);
+        } else {
+          images.forEach(h => h.image.dispose());
+        }
+      })
+      .catch(error => {
+        // Without heights the letters can't draw; say why instead of failing silently.
+        console.error('[TypeMelt] building letter height images failed', error);
+      });
     return () => {
       live = false;
       built.forEach(h => h.image.dispose());

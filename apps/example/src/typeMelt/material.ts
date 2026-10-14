@@ -52,7 +52,7 @@ export const ROUND_EM = 0.025;
 /** Blur that fillets letters and droplets together on screen, in font sizes. */
 export const SOFT_EM = 0.012;
 /** Extra blur at a full melt, so slumping letters soften into goo, in font sizes. */
-export const MELT_SOFT_EM = 0.05;
+export const MELT_SOFT_EM = 0.03;
 
 /** The fillet blur's sigma in drawing pixels (what tgfx's `<Blur>` takes), for a melt of 0..1. */
 export function softBlurPx(

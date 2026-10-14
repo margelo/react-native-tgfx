@@ -14,7 +14,7 @@ import {
   type SpriteBuffer,
 } from 'react-native-tgfx';
 import type { HeightImage } from './heightImages';
-import { CHROME_SOURCE, chromeUniforms } from './material';
+import { CHROME_SOURCE, chromeUniforms, softBlurPx } from './material';
 import type { LetterValues, Value } from './sim';
 import { BLOB } from './state';
 import type { Word } from './word';
@@ -123,7 +123,12 @@ export function LiquidScene(props: LiquidSceneProps) {
             transform={[{ translateY: 2 * floorY }, { scaleY: -1 }]}
             opacity={0.3}
           >
-            <Liquid {...props} />
+            {/* The faint reflection keeps the resting blur: a growing blur
+                costs the full price twice for a detail nobody sees. */}
+            <Liquid
+              {...props}
+              blur={softBlurPx(props.word.data.fontSize, PixelRatio.get(), 0)}
+            />
           </Group>
           <Rect x={0} y={floorY} width={width} height={height - floorY}>
             <LinearGradient
