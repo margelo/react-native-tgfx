@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/explode.ts
 // Explode: the letters become droplets at their sampled homes and fly.
 import { springSprites } from './springHome';
 import {
@@ -45,9 +44,15 @@ export function destroyExplode(s: SimState, imp: Impulse): void {
     const d = Math.hypot(rx, ry) + 1e-3;
     const kick = imp.speed * KICK * Math.exp(-d / reach);
     // Half along the swipe, half away from where it ended, a little upward lift and scatter.
-    s.vx[i] = s.vx[i]! + kick * (0.5 * dx + (0.5 * rx) / d) + (nextRand(s) - 0.5) * kick * 0.3;
+    s.vx[i] =
+      s.vx[i]! +
+      kick * (0.5 * dx + (0.5 * rx) / d) +
+      (nextRand(s) - 0.5) * kick * 0.3;
     s.vy[i] =
-      s.vy[i]! + kick * (0.5 * dy + (0.5 * ry) / d) + (nextRand(s) - 0.5) * kick * 0.3 - kick * 0.2;
+      s.vy[i]! +
+      kick * (0.5 * dy + (0.5 * ry) / d) +
+      (nextRand(s) - 0.5) * kick * 0.3 -
+      kick * 0.2;
   }
 }
 

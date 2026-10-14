@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/springHome.ts
 // Rebuild motion shared by every mode: critically damped springs toward home.
 import { LETTERS, type SimState } from './state';
 

@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/state.test.ts
 import {
   CHAIN,
   MAX_ANCHORS,
@@ -13,7 +12,11 @@ import {
   letterPoint,
   nextRand,
 } from '../../typeMelt/state';
-import { springLetters, springSprites, wrapAngle } from '../../typeMelt/springHome';
+import {
+  springLetters,
+  springSprites,
+  wrapAngle,
+} from '../../typeMelt/springHome';
 import { fakeWord } from '../../__fixtures__/typeMelt/fakeWord';
 
 test('createState puts every letter at home, upright and unsagged', () => {
@@ -53,7 +56,9 @@ test('distToSegment measures to the segment, and a zero-length swipe is a point'
   const imp = { sx: 0, sy: 0, ex: 10, ey: 0, speed: 0 };
   expect(distToSegment(5, 3, imp)).toBeCloseTo(3);
   expect(distToSegment(-4, 3, imp)).toBeCloseTo(5);
-  expect(distToSegment(3, 4, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 })).toBeCloseTo(5);
+  expect(
+    distToSegment(3, 4, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 }),
+  ).toBeCloseTo(5);
 });
 
 test('nextRand is seeded by the word', () => {

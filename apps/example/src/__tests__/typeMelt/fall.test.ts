@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/fall.test.ts
 import { destroyFall, stepFall } from '../../typeMelt/fall';
 import {
   CIRCLES_PER_LETTER,

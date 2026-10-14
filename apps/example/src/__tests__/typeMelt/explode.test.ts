@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/explode.test.ts
 import { destroyExplode, stepExplode } from '../../typeMelt/explode';
 import {
   MODE_EXPLODE,

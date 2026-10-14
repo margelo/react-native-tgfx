@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/fakeWord.ts
 import {
   bottomAnchors,
   mulberry32,
@@ -20,7 +19,8 @@ export function fakeWord(): WordData {
   const h = new Float32Array(LETTERS).fill(100);
   const rand = mulberry32(1);
   const box = { x: -30, y: -50, width: 60, height: 100 };
-  const contains = (x: number, y: number) => Math.abs(x) <= 30 && Math.abs(y) <= 50;
+  const contains = (x: number, y: number) =>
+    Math.abs(x) <= 30 && Math.abs(y) <= 50;
   const homes: number[] = [];
   const anchors = new Float32Array(LETTERS * ANCHORS_PER_LETTER * 2).fill(NaN);
   const circles = new Float32Array(LETTERS * CIRCLES_PER_LETTER * 2);
@@ -29,8 +29,14 @@ export function fakeWord(): WordData {
     for (let k = 0; k < pts.length; k += 2) {
       homes.push(cx[i]! + pts[k]!, cy[i]! + pts[k + 1]!);
     }
-    anchors.set(bottomAnchors(contains, box, ANCHORS_PER_LETTER, 1), i * ANCHORS_PER_LETTER * 2);
-    circles.set(pickSpread(pts, CIRCLES_PER_LETTER), i * CIRCLES_PER_LETTER * 2);
+    anchors.set(
+      bottomAnchors(contains, box, ANCHORS_PER_LETTER, 1),
+      i * ANCHORS_PER_LETTER * 2,
+    );
+    circles.set(
+      pickSpread(pts, CIRCLES_PER_LETTER),
+      i * CIRCLES_PER_LETTER * 2,
+    );
   }
   return {
     width: 400,

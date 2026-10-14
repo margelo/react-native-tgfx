@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/state.ts
 // TypeMelt's simulation state: typed arrays only, created once on the UI
 // runtime and mutated in place by the per-mode steps — nothing allocates per frame.
 
@@ -123,7 +122,10 @@ export function distToSegment(x: number, y: number, imp: Impulse): number {
   const dx = imp.ex - imp.sx;
   const dy = imp.ey - imp.sy;
   const len2 = dx * dx + dy * dy;
-  const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((x - imp.sx) * dx + (y - imp.sy) * dy) / len2)) : 0;
+  const t =
+    len2 > 1e-9
+      ? Math.max(0, Math.min(1, ((x - imp.sx) * dx + (y - imp.sy) * dy) / len2))
+      : 0;
   return Math.hypot(x - (imp.sx + dx * t), y - (imp.sy + dy * t));
 }
 
@@ -189,9 +191,15 @@ export function resetMode(s: SimState): void {
     s.stretch[a] = 0;
     s.boost[a] = 0;
     const ax = w.anchors[a * 2]!;
-    const unused = ax !== ax;
+    const unused = Number.isNaN(ax);
     if (!unused) {
-      letterPoint(s, (a / ANCHORS_PER_LETTER) | 0, ax, w.anchors[a * 2 + 1]!, s.tmp);
+      letterPoint(
+        s,
+        (a / ANCHORS_PER_LETTER) | 0,
+        ax,
+        w.anchors[a * 2 + 1]!,
+        s.tmp,
+      );
     }
     for (let j = 0; j < CHAIN; j++) {
       const k = a * CHAIN + j;

@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/fall.ts
 // Fall: each letter is a unit-mass rigid body whose collision shape is a few
 // circles along its ink. Impulse-based contacts against floor, walls and each other.
 import { springLetters } from './springHome';

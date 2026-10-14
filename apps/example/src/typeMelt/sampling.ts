@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/sampling.ts
 // Geometry sampling for TypeMelt, kept free of native calls so Jest can run it:
 // the caller hands in `contains` (pathContains on device, a predicate in tests).
 

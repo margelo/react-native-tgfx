@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/melt.ts
 // Melt: Verlet drip chains hang from anchors on the letters' bottom edges,
 // lengthen at a per-anchor rate, and pool on the floor.
 import {
@@ -33,10 +32,16 @@ export function destroyMelt(s: SimState, imp: Impulse): void {
   const reach = 1.5 * w.fontSize;
   for (let a = 0; a < MAX_ANCHORS; a++) {
     const ax = w.anchors[a * 2]!;
-    if (ax !== ax) {
+    if (Number.isNaN(ax)) {
       continue;
     }
-    letterPoint(s, (a / ANCHORS_PER_LETTER) | 0, ax, w.anchors[a * 2 + 1]!, s.tmp);
+    letterPoint(
+      s,
+      (a / ANCHORS_PER_LETTER) | 0,
+      ax,
+      w.anchors[a * 2 + 1]!,
+      s.tmp,
+    );
     if (distToSegment(s.tmp[0]!, s.tmp[1]!, imp) < reach) {
       s.boost[a] = s.boost[a]! + 1 + imp.speed / 800;
     }
@@ -51,7 +56,9 @@ export function stepMelt(s: SimState, dt: number): void {
   let settled = true;
   for (let i = 0; i < LETTERS; i++) {
     const target = destroyed ? SAG : 1;
-    s.lsy[i] = s.lsy[i]! + (target - s.lsy[i]!) * Math.min(1, dt * (rebuilding ? 4 : 0.8));
+    s.lsy[i] =
+      s.lsy[i]! +
+      (target - s.lsy[i]!) * Math.min(1, dt * (rebuilding ? 4 : 0.8));
     if (rebuilding && Math.abs(s.lsy[i]! - 1) < 0.002) {
       s.lsy[i] = 1;
     }
@@ -64,17 +71,26 @@ export function stepMelt(s: SimState, dt: number): void {
   const g = GRAVITY * 0.35 * dt * dt;
   for (let a = 0; a < MAX_ANCHORS; a++) {
     const ax = w.anchors[a * 2]!;
-    if (ax !== ax) {
+    if (Number.isNaN(ax)) {
       continue;
     }
     const base = a * CHAIN;
-    letterPoint(s, (a / ANCHORS_PER_LETTER) | 0, ax, w.anchors[a * 2 + 1]!, s.tmp);
+    letterPoint(
+      s,
+      (a / ANCHORS_PER_LETTER) | 0,
+      ax,
+      w.anchors[a * 2 + 1]!,
+      s.tmp,
+    );
     const gap = w.floorY - s.tmp[1]!;
     if (rebuilding) {
       s.stretch[a] = Math.max(0, s.stretch[a]! - (40 + s.stretch[a]! * 3) * dt);
     } else {
       const limit = destroyed ? gap * 1.2 : gap * INTACT_REACH;
-      s.stretch[a] = Math.min(limit, s.stretch[a]! + s.rate[a]! * (1 + s.boost[a]! * 4) * dt);
+      s.stretch[a] = Math.min(
+        limit,
+        s.stretch[a]! + s.rate[a]! * (1 + s.boost[a]! * 4) * dt,
+      );
     }
     s.boost[a] = s.boost[a]! * Math.exp(-BOOST_DECAY * dt);
     settled = settled && s.stretch[a] === 0;

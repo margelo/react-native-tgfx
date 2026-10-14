@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/sampling.test.ts
 import {
   bottomAnchors,
   mulberry32,
@@ -11,7 +10,8 @@ const box: Box = { x: -30, y: -50, width: 60, height: 100 };
 const rect = (x: number, y: number) => Math.abs(x) <= 30 && Math.abs(y) <= 50;
 // An upside-down T: a stem plus a wide foot, so columns find different bottoms.
 const tee = (x: number, y: number) =>
-  (Math.abs(x) <= 8 && y >= -50 && y <= 50) || (y >= -50 && y <= -35 && Math.abs(x) <= 30);
+  (Math.abs(x) <= 8 && y >= -50 && y <= 50) ||
+  (y >= -50 && y <= -35 && Math.abs(x) <= 30);
 
 test('mulberry32 is deterministic and in [0, 1)', () => {
   const a = mulberry32(42);
@@ -40,7 +40,10 @@ test('sampleInside points never sit closer than half a spacing', () => {
   let min = Infinity;
   for (let i = 0; i < pts.length; i += 2) {
     for (let j = i + 2; j < pts.length; j += 2) {
-      min = Math.min(min, Math.hypot(pts[i]! - pts[j]!, pts[i + 1]! - pts[j + 1]!));
+      min = Math.min(
+        min,
+        Math.hypot(pts[i]! - pts[j]!, pts[i + 1]! - pts[j + 1]!),
+      );
     }
   }
   expect(min).toBeGreaterThanOrEqual(3 - 1e-6);

@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/melt.test.ts
 import { SAG, destroyMelt, stepMelt } from '../../typeMelt/melt';
 import {
   CHAIN,

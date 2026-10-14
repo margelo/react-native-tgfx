@@ -1,4 +1,3 @@
-// apps/example/src/typeMelt/sim.ts
 // The one entry point the screen drives: step, destroy, rebuild, switch mode,
 // and publish the state into value slots and the sprite buffer.
 import { SPRITE_FLOATS } from 'react-native-tgfx';

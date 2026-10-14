@@ -1,4 +1,3 @@
-// apps/example/src/__tests__/typeMelt/sim.test.ts
 import { SPRITE_FLOATS } from 'react-native-tgfx';
 import {
   BLOB,
@@ -10,7 +9,14 @@ import {
   PHASE_REBUILDING,
   createState,
 } from '../../typeMelt/state';
-import { destroy, publish, rebuild, setMode, step, type LetterValues } from '../../typeMelt/sim';
+import {
+  destroy,
+  publish,
+  rebuild,
+  setMode,
+  step,
+  type LetterValues,
+} from '../../typeMelt/sim';
 import { fakeWord } from '../../__fixtures__/typeMelt/fakeWord';
 
 // The package's build output isn't present under Jest, so the mock is virtual.
@@ -80,7 +86,12 @@ test('publish writes sprite scale and centre, letter values and a count that alw
   step(s, 1 / 60);
   const f = new Float32Array(s.n * SPRITE_FLOATS);
   const v = () => ({ value: -1 });
-  const letters: LetterValues[] = Array.from({ length: 4 }, () => ({ x: v(), y: v(), rot: v(), sy: v() }));
+  const letters: LetterValues[] = Array.from({ length: 4 }, () => ({
+    x: v(),
+    y: v(),
+    rot: v(),
+    sy: v(),
+  }));
   const opacity = v();
   const count = v();
   publish(s, f, letters, opacity, count, 1234.5);
