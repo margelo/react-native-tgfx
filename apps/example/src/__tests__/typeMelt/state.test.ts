@@ -6,6 +6,7 @@ import {
   MODE_MELT,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  SPREAD,
   createState,
   distToSegment,
   finishRebuild,
@@ -47,9 +48,9 @@ test('letterPoint applies the slump scale, then rotation, then translation', () 
   s.lsy[1] = 0.5;
   s.la[1] = Math.PI / 2;
   letterPoint(s, 1, 10, 20, out);
-  // (10, 20) → half slumped: x × 1.2, y × 0.5 → (12, 10) → rotate 90° (-10, 12) → + (160, 200)
+  // (10, 20) → half slumped: x × (1 + SPREAD / 2), y × 0.5 → rotate 90° → + (160, 200)
   expect(out[0]).toBeCloseTo(150);
-  expect(out[1]).toBeCloseTo(212);
+  expect(out[1]).toBeCloseTo(200 + 10 * (1 + SPREAD * 0.5));
 });
 
 test('distToSegment measures to the segment, and a zero-length swipe is a point', () => {

@@ -11,7 +11,7 @@ export const CIRCLES_PER_LETTER = 6;
 export const POOL_BASE = MAX_ANCHORS * CHAIN;
 export const POOL_CAP = 400;
 /** How much wider a letter gets as it slumps flat: 1 + SPREAD at a full melt. */
-export const SPREAD = 0.4;
+export const SPREAD = 0.15;
 /** The blob sprite's texture size, in image pixels (rendered at pixelRatio 1). */
 export const BLOB = 64;
 export const MAX_DT = 1 / 30;
