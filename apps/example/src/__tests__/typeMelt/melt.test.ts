@@ -216,3 +216,25 @@ test('feeding the puddle never slingshots a strand above its letter', () => {
     }
   }
 });
+
+test('dry anchors draw nothing at rest, so letter bottoms stay smooth', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  run(s, 10);
+  for (let a = 0; a < MAX_ANCHORS; a++) {
+    if (s.stretch[a]! > 0) continue;
+    for (let j = 0; j < CHAIN; j++) expect(s.r[a * CHAIN + j]).toBe(0);
+  }
+});
+
+test('a resting drip hangs from the bottom edge, not from under an arm', () => {
+  const w = fakeWord();
+  // Letter 0: three anchors under an arm, high in the letter; one on its bottom edge.
+  w.anchors[1] = -30;
+  w.anchors[3] = -30;
+  w.anchors[7] = -30;
+  const s = createState(w, MODE_MELT);
+  expect(s.reach[2]).toBeGreaterThan(0);
+  expect(s.reach[0]).toBe(0);
+  expect(s.reach[1]).toBe(0);
+  expect(s.reach[3]).toBe(0);
+});

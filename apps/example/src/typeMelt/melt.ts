@@ -202,7 +202,12 @@ export function stepMelt(s: SimState, dt: number): void {
     const head = base + CHAIN - 1;
     // Measured against the head's current size, so a foot stays a foot.
     const footed = s.py[head]! >= w.floorY - s.r[head]! - 0.5;
-    s.r[head] = footed ? R * FOOT : nodeRadius(R, CHAIN - 1);
+    // A drip grows out of nothing: a dry anchor draws no blob on the letter.
+    const grow = Math.min(1, s.stretch[a]! / (2 * R));
+    for (let j = 0; j < CHAIN - 1; j++) {
+      s.r[base + j] = nodeRadius(R, j) * grow;
+    }
+    s.r[head] = footed ? R * FOOT : nodeRadius(R, CHAIN - 1) * grow;
     if (footed) {
       s.py[head] = s.oy[head] = w.floorY - R * FOOT;
     }

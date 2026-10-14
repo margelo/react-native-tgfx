@@ -287,22 +287,31 @@ export function createState(word: WordData, mode: number): SimState {
   let longest = -1;
   let lastWet = -1;
   for (let i = 0; i < LETTERS; i++) {
-    let used = 0;
+    // Prefer anchors on the letter's bottom edge: a drip from under an arm
+    // (the F's middle bar) closes the letter into another one.
+    const low = (a: number) =>
+      !Number.isNaN(word.anchors[a * 2]!) &&
+      word.anchors[a * 2 + 1]! > word.h[i]! * 0.25;
+    const used = (a: number) => !Number.isNaN(word.anchors[a * 2]!);
+    let lows = 0;
+    let all = 0;
     for (
       let a = i * ANCHORS_PER_LETTER;
       a < (i + 1) * ANCHORS_PER_LETTER;
       a++
     ) {
-      if (!Number.isNaN(word.anchors[a * 2]!)) used++;
+      if (low(a)) lows++;
+      if (used(a)) all++;
     }
-    let pick = (nextRand(s) * used) | 0;
+    const eligible = lows > 0 ? low : used;
+    let pick = (nextRand(s) * (lows > 0 ? lows : all)) | 0;
     for (
       let a = i * ANCHORS_PER_LETTER;
       a < (i + 1) * ANCHORS_PER_LETTER;
       a++
     ) {
       s.reach[a] = 0;
-      if (Number.isNaN(word.anchors[a * 2]!) || pick-- !== 0) {
+      if (!eligible(a) || pick-- !== 0) {
         continue;
       }
       lastWet = a;
