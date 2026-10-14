@@ -7,6 +7,7 @@ import {
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  SPREAD,
   createState,
 } from '../../typeMelt/state';
 import {
@@ -90,6 +91,7 @@ test('publish writes sprite scale and centre, letter values and a count that alw
     x: v(),
     y: v(),
     rot: v(),
+    sx: v(),
     sy: v(),
   }));
   const opacity = v();
@@ -100,7 +102,24 @@ test('publish writes sprite scale and centre, letter values and a count that alw
   expect(f[6]).toBe(s.py[0]);
   expect(letters[2]!.x.value).toBe(s.lx[2]);
   expect(letters[2]!.sy.value).toBe(s.lsy[2]);
+  expect(letters[2]!.sx.value).toBe(1);
   expect(opacity.value).toBe(0);
   expect(Math.floor(count.value)).toBe(s.n);
   expect(count.value).not.toBe(s.n);
+});
+
+test('publish widens a slumping letter as it flattens', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  s.lsy[1] = 0.25;
+  const v = () => ({ value: -1 });
+  const letters: LetterValues[] = Array.from({ length: 4 }, () => ({
+    x: v(),
+    y: v(),
+    rot: v(),
+    sx: v(),
+    sy: v(),
+  }));
+  publish(s, new Float32Array(s.n * SPRITE_FLOATS), letters, v(), v(), 0);
+  expect(letters[1]!.sx.value).toBeCloseTo(1 + SPREAD * 0.75);
+  expect(letters[0]!.sx.value).toBe(1);
 });

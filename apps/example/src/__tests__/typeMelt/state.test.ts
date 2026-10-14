@@ -41,15 +41,15 @@ test('melt mode starts with every chain collapsed onto its anchor', () => {
   }
 });
 
-test('letterPoint applies scaleY, then rotation, then translation', () => {
+test('letterPoint applies the slump scale, then rotation, then translation', () => {
   const s = createState(fakeWord(), MODE_FALL);
   const out = new Float32Array(2);
   s.lsy[1] = 0.5;
   s.la[1] = Math.PI / 2;
   letterPoint(s, 1, 10, 20, out);
-  // (10, 20) → scaleY (10, 10) → rotate 90° (-10, 10) → + (160, 200)
+  // (10, 20) → half slumped: x × 1.2, y × 0.5 → (12, 10) → rotate 90° (-10, 12) → + (160, 200)
   expect(out[0]).toBeCloseTo(150);
-  expect(out[1]).toBeCloseTo(210);
+  expect(out[1]).toBeCloseTo(212);
 });
 
 test('distToSegment measures to the segment, and a zero-length swipe is a point', () => {

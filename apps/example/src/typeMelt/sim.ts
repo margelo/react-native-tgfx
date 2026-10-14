@@ -13,6 +13,7 @@ import {
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  SPREAD,
   type Impulse,
   type SimState,
 } from './state';
@@ -26,6 +27,7 @@ export interface LetterValues {
   x: Value;
   y: Value;
   rot: Value;
+  sx: Value;
   sy: Value;
 }
 
@@ -94,6 +96,7 @@ export function publish(
     l.x.value = s.lx[i]!;
     l.y.value = s.ly[i]!;
     l.rot.value = s.la[i]!;
+    l.sx.value = 1 + SPREAD * (1 - s.lsy[i]!);
     l.sy.value = s.lsy[i]!;
   }
   opacity.value = s.letterOpacity;

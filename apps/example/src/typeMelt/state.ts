@@ -7,6 +7,11 @@ export const CHAIN = 8;
 export const ANCHORS_PER_LETTER = 4;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 6;
+/** Melt's puddle lives after the drip chains in the sprite buffer. */
+export const POOL_BASE = MAX_ANCHORS * CHAIN;
+export const POOL_CAP = 400;
+/** How much wider a letter gets as it slumps flat: 1 + SPREAD at a full melt. */
+export const SPREAD = 0.4;
 /** The blob sprite's texture size, in image pixels (rendered at pixelRatio 1). */
 export const BLOB = 64;
 export const MAX_DT = 1 / 30;
@@ -85,6 +90,10 @@ export interface SimState {
   stretch: Float32Array;
   rate: Float32Array;
   boost: Float32Array;
+  /** Live puddle sprites, from POOL_BASE. */
+  poolN: number;
+  /** Per letter: melted volume not yet emitted into the puddle, in drops. */
+  emitAcc: Float32Array;
   // Scratch, so the steps never allocate.
   cwx: Float32Array;
   cwy: Float32Array;
@@ -101,7 +110,10 @@ export function nextRand(s: SimState): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-/** Letter-local (ax, ay) to canvas points: scaleY, then rotate, then translate — the group's transform order. */
+/**
+ * Letter-local (ax, ay) to canvas points: scale (a slumping letter widens as
+ * it flattens), then rotate, then translate — the group's transform order.
+ */
 export function letterPoint(
   s: SimState,
   i: number,
@@ -110,11 +122,12 @@ export function letterPoint(
   out: Float32Array,
 ): void {
   'worklet';
+  const x = ax * (1 + SPREAD * (1 - s.lsy[i]!));
   const y = ay * s.lsy[i]!;
   const c = Math.cos(s.la[i]!);
   const n = Math.sin(s.la[i]!);
-  out[0] = s.lx[i]! + ax * c - y * n;
-  out[1] = s.ly[i]! + ax * n + y * c;
+  out[0] = s.lx[i]! + x * c - y * n;
+  out[1] = s.ly[i]! + x * n + y * c;
 }
 
 export function distToSegment(x: number, y: number, imp: Impulse): number {
@@ -181,11 +194,15 @@ export function resetMode(s: SimState): void {
     s.lvsy[i] = 0;
   }
   s.letterOpacity = 1;
+  s.poolN = 0;
+  for (let i = 0; i < LETTERS; i++) {
+    s.emitAcc[i] = 0;
+  }
   if (s.mode !== MODE_MELT) {
     s.n = 0;
     return;
   }
-  s.n = MAX_ANCHORS * CHAIN;
+  s.n = POOL_BASE;
   const R = w.dropR * 1.2;
   for (let a = 0; a < MAX_ANCHORS; a++) {
     s.stretch[a] = 0;
@@ -248,6 +265,8 @@ export function createState(word: WordData, mode: number): SimState {
     stretch: new Float32Array(MAX_ANCHORS),
     rate: new Float32Array(MAX_ANCHORS),
     boost: new Float32Array(MAX_ANCHORS),
+    poolN: 0,
+    emitAcc: new Float32Array(LETTERS),
     cwx: new Float32Array(LETTERS * CIRCLES_PER_LETTER),
     cwy: new Float32Array(LETTERS * CIRCLES_PER_LETTER),
     tmp: new Float32Array(2),

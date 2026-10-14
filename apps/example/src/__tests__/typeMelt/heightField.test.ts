@@ -1,7 +1,11 @@
 import { distanceInside, tubeHeights } from '../../typeMelt/heightField';
 
 /** RGBA bytes whose alpha is 255 where `inside(x, y)`. */
-function maskOf(w: number, h: number, inside: (x: number, y: number) => boolean) {
+function maskOf(
+  w: number,
+  h: number,
+  inside: (x: number, y: number) => boolean,
+) {
   const out = new Uint8Array(w * h * 4);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -35,7 +39,12 @@ test('a wide stripe gets a circular profile R deep, flat beyond it', () => {
   const h = 5;
   const R = 10;
   // Inside from x = 5 to 54: distance to the outside is x - 4 on the left edge.
-  const px = tubeHeights(maskOf(w, h, x => x >= 5 && x <= 54), w, h, R);
+  const px = tubeHeights(
+    maskOf(w, h, x => x >= 5 && x <= 54),
+    w,
+    h,
+    R,
+  );
   for (let x = 5; x < 30; x++) {
     const u = Math.min((x - 4) / R, 1);
     const want = Math.round(255 * Math.sqrt(1 - (1 - u) * (1 - u)));
@@ -46,7 +55,12 @@ test('a wide stripe gets a circular profile R deep, flat beyond it', () => {
 
 test('heights are premultiplied white and zero outside', () => {
   const w = 41;
-  const px = tubeHeights(maskOf(w, w, (x, y) => Math.hypot(x - 20, y - 20) <= 15), w, w, 15);
+  const px = tubeHeights(
+    maskOf(w, w, (x, y) => Math.hypot(x - 20, y - 20) <= 15),
+    w,
+    w,
+    15,
+  );
   for (let i = 0; i < w * w; i++) {
     const a = px[i * 4 + 3]!;
     expect(px[i * 4]).toBe(a);
