@@ -32,12 +32,16 @@ function lowestHead(s: SimState) {
 const bottomOf = (s: SimState, i: number) =>
   s.ly[i]! + (s.word.h[i]! / 2) * s.lsy[i]!;
 
-test('intact drips hang but stop well short of the floor, with no puddle', () => {
+test('at rest about half the anchors drip, none reaching the floor, with no puddle', () => {
   const s = createState(fakeWord(), MODE_MELT);
   run(s, 10);
   const bottom = 250; // fakeWord letters end at y = 250, floor at 300
   expect(lowestHead(s)).toBeGreaterThan(bottom + 4);
-  expect(lowestHead(s)).toBeLessThan(bottom + 0.35 * 50 + 1);
+  expect(lowestHead(s)).toBeLessThan(bottom + 0.7 * 50 + 1);
+  let still = 0;
+  for (let a = 0; a < MAX_ANCHORS; a++) if (s.stretch[a] === 0) still++;
+  expect(still).toBeGreaterThanOrEqual(4);
+  expect(still).toBeLessThanOrEqual(12);
   expect(s.n).toBe(POOL_BASE);
 });
 
@@ -132,4 +136,57 @@ test('a swipe during rebuild melts again', () => {
   run(s, 1);
   expect(s.phase).toBe(PHASE_DESTROYED);
   expect(s.lsy[0]!).toBeLessThan(before);
+});
+
+test('a swipe speeds the melt up, but only modestly', () => {
+  const timeToHalf = (speed: number) => {
+    const s = createState(fakeWord(), MODE_MELT);
+    destroyMelt(s, { sx: 40, sy: 250, ex: 360, ey: 250, speed });
+    let k = 0;
+    while (s.lsy[1]! > 0.5 && k++ < 6000) stepMelt(s, 1 / 60);
+    return k;
+  };
+  const ratio = timeToHalf(0) / timeToHalf(4000);
+  expect(ratio).toBeGreaterThan(1.1);
+  expect(ratio).toBeLessThan(2);
+});
+
+test('drips travel down with their letter as it slumps', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  run(s, 6); // let the resting drips hang first
+  destroyMelt(s, swipe);
+  const R = s.word.dropR * 1.2;
+  for (let t = 0; t < 12; t++) {
+    run(s, 0.5);
+    for (let a = 0; a < MAX_ANCHORS; a++) {
+      const root = a * CHAIN;
+      if (s.r[root]! === 0) continue;
+      for (let j = 1; j < CHAIN; j++) {
+        expect(s.py[root + j]!).toBeGreaterThanOrEqual(s.py[root]! - R);
+      }
+    }
+  }
+});
+
+test('feeding the puddle never slingshots a strand above its letter', () => {
+  const w = fakeWord();
+  // Letter 0's outer anchors hang from a crossbar underside, high in the letter,
+  // so their strands are long and feed the puddle hard.
+  w.anchors[1] = -30;
+  w.anchors[7] = -30;
+  const s = createState(w, MODE_MELT);
+  const dts = [1 / 60, 1 / 30, 1 / 120, 1 / 45];
+  for (let k = 0; k < 360; k++) stepMelt(s, dts[k % 4]!);
+  destroyMelt(s, { sx: 40, sy: 250, ex: 360, ey: 250, speed: 3500 });
+  const R = s.word.dropR * 1.2;
+  for (let k = 0; k < 900; k++) {
+    stepMelt(s, dts[k % 4]!);
+    for (let a = 0; a < MAX_ANCHORS; a++) {
+      const root = a * CHAIN;
+      if (s.r[root]! === 0) continue;
+      for (let j = 1; j < CHAIN; j++) {
+        expect(s.py[root + j]!).toBeGreaterThanOrEqual(s.py[root]! - R);
+      }
+    }
+  }
 });

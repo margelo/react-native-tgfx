@@ -7,30 +7,34 @@ import {
   Fill,
   Group,
   LinearGradient,
-  Path,
   RadialGradient,
   Rect,
   RuntimeShader,
+  TgfxImage,
   type SpriteBuffer,
-  type TgfxImage,
 } from 'react-native-tgfx';
-import { BLUR_EM, CHROME_SOURCE, chromeUniforms } from './material';
+import type { HeightImage } from './heightImages';
+import { CHROME_SOURCE, chromeUniforms } from './material';
 import type { LetterValues, Value } from './sim';
 import { BLOB } from './state';
 import type { Word } from './word';
 
 export interface LiquidSceneProps {
   word: Word;
+  /** Per-letter tube heights; nothing is drawn for the letters until they exist. */
+  heights: HeightImage[] | null;
   letters: LetterValues[];
   letterOpacity: Value | number;
   blob: TgfxImage | null;
   sprites: SpriteBuffer;
   count: Value | number;
   time: Value | number;
+  /** Fillet blur sigma in drawing pixels; grows as the letters melt (see `softBlurPx`). */
+  blur: Value | number;
   reflection?: boolean;
 }
 
-/** The droplet texture: solid core, soft edge, so the blur has something to round off. */
+/** The droplet texture: a sphere's height profile, alpha = sqrt(1 - r²). */
 export function BlobSprite() {
   const c = BLOB / 2;
   return (
@@ -38,8 +42,16 @@ export function BlobSprite() {
       <RadialGradient
         center={{ x: c, y: c }}
         r={c}
-        colors={['#ffffffff', '#ffffffff', '#ffffff00']}
-        positions={[0, 0.7, 1]}
+        colors={[
+          '#ffffffff',
+          '#ffffffF3',
+          '#ffffffDD',
+          '#ffffffB6',
+          '#ffffff86',
+          '#ffffff50',
+          '#ffffff00',
+        ]}
+        positions={[0, 0.3, 0.5, 0.7, 0.85, 0.95, 1]}
       />
     </Circle>
   );
@@ -47,12 +59,14 @@ export function BlobSprite() {
 
 function Liquid({
   word,
+  heights,
   letters,
   letterOpacity,
   blob,
   sprites,
   count,
   time,
+  blur,
 }: LiquidSceneProps) {
   const scale = PixelRatio.get();
   const { fontSize } = word.data;
@@ -66,27 +80,28 @@ function Liquid({
         sampleRadiusPx={Math.ceil(1.5 * scale) + 1}
       />
       <Group>
-        {/* Pass 1: plain white geometry, blurred into a height field. */}
-        {/* tgfx takes the sigma in drawing pixels, not points. */}
-        <Blur blur={fontSize * BLUR_EM * scale} />
+        {/* Pass 1: the height field — tube letters and sphere droplets,
+            lightly blurred so they fillet where they meet. */}
+        <Blur blur={blur} />
         <Group opacity={letterOpacity}>
-          {word.paths.map((path, i) => (
+          {heights?.map((tube, i) => (
             <Group
               key={i}
               transform={[
                 { translateX: letters[i]!.x },
                 { translateY: letters[i]!.y },
                 { rotate: letters[i]!.rot },
+                { scaleX: letters[i]!.sx },
                 { scaleY: letters[i]!.sy },
               ]}
             >
-              <Path path={path} color="white" />
-              <Path
-                path={path}
-                color="white"
-                style="stroke"
-                strokeWidth={word.strokeWidth}
-                strokeJoin="round"
+              <TgfxImage
+                image={tube.image}
+                x={tube.x}
+                y={tube.y}
+                width={tube.width}
+                height={tube.height}
+                fit="fill"
               />
             </Group>
           ))}

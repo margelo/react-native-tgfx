@@ -32,14 +32,16 @@ export interface Word {
   data: WordData;
   /** Letter outlines in letter-local points, centred on (0, 0). */
   paths: string[];
-  /** The round-join stroke that fattens the serif face into balloon type. */
+  /** The round-join stroke that fattens the serif face before it is inflated. */
   strokeWidth: number;
 }
 
 export function buildWord(width: number, height: number, seed = 7): Word {
-  const fontSize = Math.min(width * 0.3, height * 0.42);
+  const fontSize = Math.min(width * 0.27, height * 0.4);
+  // Extra room between letters, so their tubes stay apart.
+  const track = fontSize * 0.06;
   const style = { fontFamily: FAMILY, fontWeight: 'bold' as const, fontSize };
-  const total = measureText(WORD, style).width;
+  const total = measureText(WORD, style).width + track * (LETTERS - 1);
   const left = (width - total) / 2;
   const baseline = height * 0.48 + fontSize * 0.35;
   const spacing = fontSize * 0.045;
@@ -61,7 +63,7 @@ export function buildWord(width: number, height: number, seed = 7): Word {
     const advance = i === 0 ? 0 : measureText(WORD.slice(0, i), style).width;
     const midX = b.x + b.width / 2;
     const midY = b.y + b.height / 2;
-    cx[i] = left + advance + midX;
+    cx[i] = left + advance + track * i + midX;
     cy[i] = baseline + midY;
     w[i] = b.width;
     h[i] = b.height;
@@ -110,6 +112,6 @@ export function buildWord(width: number, height: number, seed = 7): Word {
       seed,
     },
     paths,
-    strokeWidth: fontSize * 0.09,
+    strokeWidth: fontSize * 0.1,
   };
 }

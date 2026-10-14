@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { PixelRatio } from 'react-native';
 import { makeMutable } from 'react-native-reanimated';
 import { describe, expect, render, test } from 'react-native-harness';
 import {
@@ -7,7 +8,9 @@ import {
   useOffscreenImage,
   useSpriteBuffer,
 } from 'react-native-tgfx';
+import { buildHeightImages, type HeightImage } from './typeMelt/heightImages';
 import { BlobSprite, LiquidScene } from './typeMelt/LiquidScene';
+import { softBlurPx } from './typeMelt/material';
 import type { LetterValues } from './typeMelt/sim';
 import {
   ANCHORS_PER_LETTER,
@@ -21,7 +24,10 @@ import { Stage, STAGE_SIZE, sleep, snapshot } from './testSupport';
 
 function useWord(width: number, height: number): Word | null {
   const ready = useFonts({ [FAMILY]: FONT_FILES });
-  return ready ? buildWord(width, height) : null;
+  return useMemo(
+    () => (ready ? buildWord(width, height) : null),
+    [ready, width, height],
+  );
 }
 
 async function wordAt(width: number, height: number): Promise<Word> {
@@ -118,10 +124,15 @@ describe('TypeMelt material', () => {
         x: makeMutable(0),
         y: makeMutable(0),
         rot: makeMutable(0),
+        sx: makeMutable(1),
         sy: makeMutable(1),
       })),
     );
-    if (!word) return null;
+    const [heights, setHeights] = useState<HeightImage[] | null>(null);
+    useEffect(() => {
+      if (word) buildHeightImages(word, PixelRatio.get()).then(setHeights);
+    }, [word]);
+    if (!word || !heights) return null;
     for (let i = 0; i < LETTERS; i++) {
       letters[i]!.x.value = word.data.cx[i]!;
       letters[i]!.y.value = word.data.cy[i]!;
@@ -129,16 +140,33 @@ describe('TypeMelt material', () => {
     return (
       <LiquidScene
         word={word}
+        heights={heights}
         letters={letters}
         letterOpacity={1}
         blob={blob}
         sprites={sprites}
         count={0}
         time={0}
+        blur={softBlurPx(word.data.fontSize, PixelRatio.get(), 0)}
         reflection={reflection}
       />
     );
   }
+
+  test('every letter gets a tube height image, peaking inside the letter', async () => {
+    const word = await wordAt(STAGE_SIZE, STAGE_SIZE);
+    const heights = await buildHeightImages(word, PixelRatio.get());
+    expect(heights).toHaveLength(LETTERS);
+    for (const h of heights) {
+      const raw = new Uint8Array(await h.image.encode('raw'));
+      let peak = 0;
+      for (let i = 3; i < raw.length; i += 4) peak = Math.max(peak, raw[i]!);
+      expect(peak).toBeGreaterThan(200);
+      // The padded border stays empty, so the tube never touches the image edge.
+      expect(raw[3]).toBe(0);
+      h.image.dispose();
+    }
+  });
 
   test('renders TGFX as liquid chrome at rest', async () => {
     await render(

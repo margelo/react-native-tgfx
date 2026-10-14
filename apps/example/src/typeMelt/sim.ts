@@ -82,6 +82,7 @@ export function publish(
   letters: LetterValues[],
   opacity: Value,
   count: Value,
+  melt: Value,
   stamp: number,
 ): void {
   'worklet';
@@ -91,7 +92,9 @@ export function publish(
     f[o + 5] = s.px[i]!;
     f[o + 6] = s.py[i]!;
   }
+  let melted = 0;
   for (let i = 0; i < LETTERS; i++) {
+    melted += 1 - s.lsy[i]!;
     const l = letters[i]!;
     l.x.value = s.lx[i]!;
     l.y.value = s.ly[i]!;
@@ -100,6 +103,8 @@ export function publish(
     l.sy.value = s.lsy[i]!;
   }
   opacity.value = s.letterOpacity;
+  // How melted the word is overall, 0..1: softens the height field's blur.
+  melt.value = melted / LETTERS;
   // Reanimated drops same-value writes, so a constant count would never wake the
   // renderer after a buffer refill; the fraction truncates natively.
   count.value = s.n + (stamp % 1000) * 1e-6;

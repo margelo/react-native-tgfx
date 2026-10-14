@@ -96,7 +96,9 @@ test('publish writes sprite scale and centre, letter values and a count that alw
   }));
   const opacity = v();
   const count = v();
-  publish(s, f, letters, opacity, count, 1234.5);
+  const melt = v();
+  publish(s, f, letters, opacity, count, melt, 1234.5);
+  expect(melt.value).toBe(0);
   expect(f[4]).toBeCloseTo(s.r[0]! / (BLOB / 2));
   expect(f[5]).toBe(s.px[0]);
   expect(f[6]).toBe(s.py[0]);
@@ -119,7 +121,10 @@ test('publish widens a slumping letter as it flattens', () => {
     sx: v(),
     sy: v(),
   }));
-  publish(s, new Float32Array(s.n * SPRITE_FLOATS), letters, v(), v(), 0);
+  const melt = v();
+  publish(s, new Float32Array(s.n * SPRITE_FLOATS), letters, v(), v(), melt, 0);
   expect(letters[1]!.sx.value).toBeCloseTo(1 + SPREAD * 0.75);
   expect(letters[0]!.sx.value).toBe(1);
+  // How melted the word is overall: the mean of (1 - lsy).
+  expect(melt.value).toBeCloseTo(0.75 / 4);
 });

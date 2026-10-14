@@ -3,7 +3,7 @@
 
 export const CAP = 2048;
 export const LETTERS = 4;
-export const CHAIN = 8;
+export const CHAIN = 12;
 export const ANCHORS_PER_LETTER = 4;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 6;
@@ -89,6 +89,8 @@ export interface SimState {
   // Melt, per anchor.
   stretch: Float32Array;
   rate: Float32Array;
+  /** Share of the gap to the floor each anchor's drip hangs while intact; 0 = dry. */
+  reach: Float32Array;
   boost: Float32Array;
   /** Live puddle sprites, from POOL_BASE. */
   poolN: number;
@@ -264,6 +266,7 @@ export function createState(word: WordData, mode: number): SimState {
     lvsy: new Float32Array(LETTERS),
     stretch: new Float32Array(MAX_ANCHORS),
     rate: new Float32Array(MAX_ANCHORS),
+    reach: new Float32Array(MAX_ANCHORS),
     boost: new Float32Array(MAX_ANCHORS),
     poolN: 0,
     emitAcc: new Float32Array(LETTERS),
@@ -275,6 +278,8 @@ export function createState(word: WordData, mode: number): SimState {
   };
   for (let a = 0; a < MAX_ANCHORS; a++) {
     s.rate[a] = 6 + 12 * nextRand(s);
+    // About half the anchors stay dry at rest, the rest hang at varied lengths.
+    s.reach[a] = nextRand(s) < 0.5 ? 0 : 0.2 + 0.5 * nextRand(s);
   }
   resetMode(s);
   return s;

@@ -31,8 +31,6 @@ const DROPS_PER_LETTER = 40;
 const POOL_MAX = 2.2;
 /** Verlet velocity kept per 1/60 s: honey, not water. */
 const VISCOUS = 0.94;
-/** While intact, drips hang this share of the gap to the floor. */
-const INTACT_REACH = 0.35;
 /** How fast a swipe's speed-up wears off, per second. */
 const BOOST_DECAY = 1.5;
 
@@ -92,7 +90,10 @@ export function stepMelt(s: SimState, dt: number): void {
       ) {
         boost = Math.max(boost, s.boost[a]!);
       }
-      const rate = (MELT_START + MELT_ACCEL * (1 - s.lsy[i]!)) * (1 + boost);
+      // A swipe hurries the melt along, but at most by 1.8×.
+      const rate =
+        (MELT_START + MELT_ACCEL * (1 - s.lsy[i]!)) *
+        (1 + Math.min(boost / 4, 1) * 0.8);
       const before = s.lsy[i]!;
       s.lsy[i] = Math.max(0, before - rate * dt);
       s.emitAcc[i] = s.emitAcc[i]! + (before - s.lsy[i]!) * DROPS_PER_LETTER;
@@ -135,7 +136,7 @@ export function stepMelt(s: SimState, dt: number): void {
     if (rebuilding) {
       s.stretch[a] = Math.max(0, s.stretch[a]! - (40 + s.stretch[a]! * 3) * dt);
     } else {
-      const limit = destroyed ? gap * 1.2 : gap * INTACT_REACH;
+      const limit = destroyed ? gap * 1.2 : gap * s.reach[a]!;
       s.stretch[a] = Math.min(
         limit,
         s.stretch[a]! + s.rate[a]! * (1 + s.boost[a]! * 4) * dt,
@@ -144,8 +145,20 @@ export function stepMelt(s: SimState, dt: number): void {
     s.boost[a] = s.boost[a]! * Math.exp(-BOOST_DECAY * dt);
     settled = settled && s.stretch[a] === 0;
     const link = s.stretch[a]! / (CHAIN - 1);
+    // The drip travels with its letter: move the whole chain by however far
+    // the root moved, without adding velocity.
+    const rootY = Math.min(s.tmp[1]!, w.floorY - nodeRadius(R, 0));
+    const mx = s.tmp[0]! - s.px[base]!;
+    const my = rootY - s.py[base]!;
+    for (let j = 1; j < CHAIN; j++) {
+      const k = base + j;
+      s.px[k] = s.px[k]! + mx;
+      s.ox[k] = s.ox[k]! + mx;
+      s.py[k] = s.py[k]! + my;
+      s.oy[k] = s.oy[k]! + my;
+    }
     s.px[base] = s.ox[base] = s.tmp[0]!;
-    s.py[base] = s.oy[base] = Math.min(s.tmp[1]!, w.floorY - nodeRadius(R, 0));
+    s.py[base] = s.oy[base] = rootY;
     for (let j = 1; j < CHAIN; j++) {
       const k = base + j;
       const vx = (s.px[k]! - s.ox[k]!) * keep;
@@ -162,9 +175,15 @@ export function stepMelt(s: SimState, dt: number): void {
         const dy = s.py[k]! - s.py[k - 1]!;
         const d = Math.hypot(dx, dy);
         if (d > link) {
+          // Shift the previous position too: a correction is not motion. A
+          // strand shortened by feeding the puddle would otherwise slingshot.
           const f = d > 1e-6 ? link / d : 0;
-          s.px[k] = s.px[k - 1]! + dx * f;
-          s.py[k] = s.py[k - 1]! + dy * f;
+          const cx = s.px[k - 1]! + dx * f - s.px[k]!;
+          const cy = s.py[k - 1]! + dy * f - s.py[k]!;
+          s.px[k] = s.px[k]! + cx;
+          s.py[k] = s.py[k]! + cy;
+          s.ox[k] = s.ox[k]! + cx;
+          s.oy[k] = s.oy[k]! + cy;
         }
         const rr = nodeRadius(R, j);
         if (s.py[k]! > w.floorY - rr) {
@@ -174,15 +193,18 @@ export function stepMelt(s: SimState, dt: number): void {
         }
       }
     }
-    // A stream that has reached the floor keeps feeding the puddle: each drop
-    // it hands over shortens it by one link, and the anchor keeps lengthening it.
+    // A stream that has reached the floor keeps feeding the puddle: each link
+    // it hands over shortens it, and the anchor keeps lengthening it.
     const head = base + CHAIN - 1;
     if (
       destroyed &&
       s.stretch[a]! > gap &&
       s.py[head]! >= w.floorY - nodeRadius(R, CHAIN - 1) - 0.5
     ) {
-      spawnPool(s, s.px[head]!, R);
+      // One drop holds about 2.5 radii of strand, so not every link makes one.
+      if (nextRand(s) < link / (2.5 * R)) {
+        spawnPool(s, s.px[head]!, R);
+      }
       s.stretch[a] = Math.max(0, s.stretch[a]! - link);
     }
   }

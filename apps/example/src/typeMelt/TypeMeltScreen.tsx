@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   makeMutable,
+  useDerivedValue,
   useFrameCallback,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -17,6 +18,8 @@ import {
   useOffscreenImage,
   useSpriteBuffer,
 } from 'react-native-tgfx';
+import { buildHeightImages, type HeightImage } from './heightImages';
+import { softBlurPx } from './material';
 import { BlobSprite, LiquidScene } from './LiquidScene';
 import {
   destroy,
@@ -72,11 +75,16 @@ export function TypeMeltScreen() {
       x: makeMutable(0),
       y: makeMutable(0),
       rot: makeMutable(0),
+      sx: makeMutable(1),
       sy: makeMutable(1),
     })),
   );
   const letterOpacity = useSharedValue(1);
   const count = useSharedValue(0);
+  const melt = useSharedValue(0);
+  const fontSize = word?.data.fontSize ?? 0;
+  const scale = PixelRatio.get();
+  const blur = useDerivedValue(() => softBlurPx(fontSize, scale, melt.value));
   const sprites = useSpriteBuffer(CAP);
   const time = useClock();
   const blob = useOffscreenImage(
@@ -86,6 +94,29 @@ export function TypeMeltScreen() {
   );
 
   // Every sprite samples the whole blob texture; only scale and centre move per frame.
+  // The tube height images, rebuilt with the word; the old ones are freed.
+  const [heights, setHeights] = useState<HeightImage[] | null>(null);
+  useEffect(() => {
+    if (!word) {
+      return;
+    }
+    let live = true;
+    let built: HeightImage[] = [];
+    buildHeightImages(word, PixelRatio.get()).then(images => {
+      built = images;
+      if (live) {
+        setHeights(images);
+      } else {
+        images.forEach(h => h.image.dispose());
+      }
+    });
+    return () => {
+      live = false;
+      built.forEach(h => h.image.dispose());
+      setHeights(null);
+    };
+  }, [word]);
+
   useEffect(() => {
     for (let i = 0; i < CAP; i++) {
       sprites.data[i * SPRITE_FLOATS + 2] = BLOB;
@@ -125,6 +156,7 @@ export function TypeMeltScreen() {
       letters,
       letterOpacity,
       count,
+      melt,
       frame.timestamp,
     );
   });
@@ -203,12 +235,14 @@ export function TypeMeltScreen() {
             <Canvas style={StyleSheet.absoluteFill}>
               <LiquidScene
                 word={word}
+                heights={heights}
                 letters={letters}
                 letterOpacity={letterOpacity}
                 blob={blob}
                 sprites={sprites}
                 count={count}
                 time={time}
+                blur={blur}
               />
             </Canvas>
           )}
