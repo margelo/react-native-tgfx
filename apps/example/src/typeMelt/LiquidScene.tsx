@@ -1,4 +1,5 @@
 import React from 'react';
+import { PixelRatio } from 'react-native';
 import {
   Atlas,
   Blur,
@@ -13,7 +14,7 @@ import {
   type SpriteBuffer,
   type TgfxImage,
 } from 'react-native-tgfx';
-import { CHROME_SOURCE, CHROME_UNIFORMS } from './material';
+import { BLUR_EM, CHROME_SOURCE, chromeUniforms } from './material';
 import type { LetterValues, Value } from './sim';
 import { BLOB } from './state';
 import type { Word } from './word';
@@ -38,7 +39,7 @@ export function BlobSprite() {
         center={{ x: c, y: c }}
         r={c}
         colors={['#ffffffff', '#ffffffff', '#ffffff00']}
-        positions={[0, 0.55, 1]}
+        positions={[0, 0.7, 1]}
       />
     </Circle>
   );
@@ -53,18 +54,21 @@ function Liquid({
   count,
   time,
 }: LiquidSceneProps) {
+  const scale = PixelRatio.get();
+  const { fontSize } = word.data;
   return (
     <Group>
       {/* Pass 2: shade what pass 1 drew. */}
       <RuntimeShader
         source={CHROME_SOURCE}
         inputName="content"
-        uniforms={{ ...CHROME_UNIFORMS, uTime: time }}
-        sampleRadiusPx={4}
+        uniforms={{ ...chromeUniforms(scale, fontSize), uTime: time }}
+        sampleRadiusPx={Math.ceil(1.5 * scale) + 1}
       />
       <Group>
         {/* Pass 1: plain white geometry, blurred into a height field. */}
-        <Blur blur={word.data.fontSize * 0.06} />
+        {/* tgfx takes the sigma in drawing pixels, not points. */}
+        <Blur blur={fontSize * BLUR_EM * scale} />
         <Group opacity={letterOpacity}>
           {word.paths.map((path, i) => (
             <Group

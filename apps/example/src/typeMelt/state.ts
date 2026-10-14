@@ -163,7 +163,7 @@ export function nodeRadius(R: number, j: number): number {
   if (j === CHAIN - 1) {
     return R * 0.95;
   }
-  return R * (0.45 + 0.3 * (1 - j / (CHAIN - 1)));
+  return R * (0.7 + 0.2 * (1 - j / (CHAIN - 1)));
 }
 
 /** Puts the current mode in its intact pose: letters home, sprites as that mode wants them at rest. */
@@ -186,7 +186,7 @@ export function resetMode(s: SimState): void {
     return;
   }
   s.n = MAX_ANCHORS * CHAIN;
-  const R = w.dropR * 1.6;
+  const R = w.dropR * 1.2;
   for (let a = 0; a < MAX_ANCHORS; a++) {
     s.stretch[a] = 0;
     s.boost[a] = 0;

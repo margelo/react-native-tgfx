@@ -66,7 +66,7 @@ export function stepMelt(s: SimState, dt: number): void {
     // Squash about the bottom edge, not the centre.
     s.ly[i] = w.cy[i]! + (w.h[i]! / 2) * (1 - s.lsy[i]!);
   }
-  const R = w.dropR * 1.6;
+  const R = w.dropR * 1.2;
   const keep = Math.pow(VISCOUS, dt * 60);
   const g = GRAVITY * 0.35 * dt * dt;
   for (let a = 0; a < MAX_ANCHORS; a++) {

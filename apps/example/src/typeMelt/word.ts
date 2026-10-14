@@ -94,7 +94,7 @@ export function buildWord(width: number, height: number, seed = 7): Word {
     data: {
       width,
       height,
-      floorY: baseline + fontSize * 0.28,
+      floorY: baseline + fontSize * 0.7,
       fontSize,
       cx,
       cy,
@@ -105,7 +105,8 @@ export function buildWord(width: number, height: number, seed = 7): Word {
       anchors,
       circles,
       circleR,
-      dropR: spacing * 0.75,
+      // Big enough that a lone droplet survives the blur's threshold.
+      dropR: fontSize * 0.06,
       seed,
     },
     paths,

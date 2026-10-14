@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   makeMutable,
   useFrameCallback,
@@ -54,6 +55,7 @@ function stateOf(): SimState | undefined {
 
 export function TypeMeltScreen() {
   const fontsReady = useFonts({ [FAMILY]: FONT_FILES });
+  const insets = useSafeAreaInsets();
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [mode, setModeState] = useState(MODE_MELT);
   const modeRef = useRef(mode);
@@ -167,7 +169,7 @@ export function TypeMeltScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.modes}>
+      <View style={[styles.modes, { marginTop: insets.top + 8 }]}>
         {MODES.map(m => (
           <Pressable
             key={m.label}
@@ -219,7 +221,7 @@ export function TypeMeltScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: 'black' },
-  modes: { flexDirection: 'row', alignSelf: 'center', marginTop: 12, gap: 8 },
+  modes: { flexDirection: 'row', alignSelf: 'center', gap: 8 },
   mode: {
     paddingHorizontal: 14,
     paddingVertical: 6,
