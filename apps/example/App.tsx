@@ -66,6 +66,7 @@ import { TgfxCameraEffects } from './src/TgfxCameraEffects';
 import { TgfxFaceBlur } from './src/TgfxFaceBlur';
 import { LittlePrinceScreen } from './src/littlePrince';
 import { ScrollableShapesScreen } from './src/scrollableShapes';
+import { TypeMeltScreen } from './src/typeMelt/TypeMeltScreen';
 import { CubeScreen } from './src/cubeScreen';
 
 // Memoised: the tab switch re-renders Screens, and re-rendering the hidden
@@ -408,6 +409,7 @@ const SCREENS = [
   'prince',
   'shapes',
   'cube',
+  'melt',
 ] as const;
 type Screen = (typeof SCREENS)[number];
 
@@ -469,6 +471,11 @@ function Screens() {
       {screen === 'cube' ? (
         <View style={styles.screenDark} testID="screen-cube">
           <CubeScreen />
+        </View>
+      ) : null}
+      {screen === 'melt' ? (
+        <View style={styles.screenDark} testID="screen-melt">
+          <TypeMeltScreen />
         </View>
       ) : null}
       <View style={[styles.tabs, { paddingBottom: insets.bottom + 8 }]}>
