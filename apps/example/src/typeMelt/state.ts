@@ -3,7 +3,7 @@
 
 export const CAP = 2048;
 export const LETTERS = 4;
-export const CHAIN = 12;
+export const CHAIN = 16;
 export const ANCHORS_PER_LETTER = 4;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 6;

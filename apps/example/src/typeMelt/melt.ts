@@ -23,8 +23,8 @@ import {
 } from './state';
 
 /** Melt speed in letter heights per second: slow at first, faster as the letter softens. */
-const MELT_START = 0.05;
-const MELT_ACCEL = 0.15;
+const MELT_START = 0.03;
+const MELT_ACCEL = 0.08;
 /** Puddle drops one whole letter's volume makes. */
 const DROPS_PER_LETTER = 40;
 /** The largest a puddle drop grows, in drip radii. */
@@ -32,7 +32,7 @@ const POOL_MAX = 2.2;
 /** Verlet velocity kept per 1/60 s: honey, not water. */
 const VISCOUS = 0.94;
 /** How fast a swipe's speed-up wears off, per second. */
-const BOOST_DECAY = 1.5;
+const BOOST_DECAY = 0.4;
 
 export function destroyMelt(s: SimState, imp: Impulse): void {
   'worklet';
@@ -69,7 +69,7 @@ function spawnPool(s: SimState, x: number, R: number): void {
   s.poolN++;
   s.px[k] = x;
   s.vx[k] = (nextRand(s) - 0.5) * 60;
-  s.r[k] = R * (0.8 + 0.4 * nextRand(s));
+  s.r[k] = R * (0.6 + 0.9 * nextRand(s));
   s.py[k] = s.word.floorY - s.r[k]! * 0.55;
 }
 
@@ -99,8 +99,11 @@ export function stepMelt(s: SimState, dt: number): void {
       s.emitAcc[i] = s.emitAcc[i]! + (before - s.lsy[i]!) * DROPS_PER_LETTER;
       while (s.emitAcc[i]! >= 1) {
         s.emitAcc[i] = s.emitAcc[i]! - 1;
+        // Bunched under the letter (a triangular spread), so each letter
+        // leaves its own puddle rather than one even bar.
         const spread = w.w[i]! * (1 + SPREAD * (1 - s.lsy[i]!));
-        spawnPool(s, s.lx[i]! + (nextRand(s) - 0.5) * spread, R);
+        const off = (nextRand(s) + nextRand(s) - 1) * spread * 0.6;
+        spawnPool(s, s.lx[i]! + off, R);
       }
     } else if (rebuilding) {
       s.lsy[i] = s.lsy[i]! + (1 - s.lsy[i]!) * Math.min(1, dt * 3);
