@@ -19,7 +19,7 @@ import {
   useSpriteBuffer,
 } from 'react-native-tgfx';
 import { buildHeightImages, type HeightImage } from './heightImages';
-import { softBlurPx } from './material';
+import { softBlurPx, type FinishName } from './material';
 import { BlobSprite, LiquidScene } from './LiquidScene';
 import {
   destroy,
@@ -41,6 +41,14 @@ import {
 } from './state';
 import { FAMILY, FONT_FILES, buildWord } from './word';
 
+const FINISH_LABELS: [FinishName, string][] = [
+  ['iridescent', 'Iridescent'],
+  ['gold', 'Gold'],
+  ['silver', 'Silver'],
+  ['bronze', 'Bronze'],
+  ['diamond', 'Diamond'],
+];
+
 const MODES = [
   { mode: MODE_MELT, label: 'Melt' },
   { mode: MODE_EXPLODE, label: 'Explode' },
@@ -61,6 +69,7 @@ export function TypeMeltScreen() {
   const insets = useSafeAreaInsets();
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [mode, setModeState] = useState(MODE_MELT);
+  const [finish, setFinish] = useState<FinishName>('iridescent');
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -223,6 +232,23 @@ export function TypeMeltScreen() {
           </Pressable>
         ))}
       </View>
+      <View style={[styles.modes, styles.finishes]}>
+        {FINISH_LABELS.map(([name, label]) => (
+          <Pressable
+            key={name}
+            accessibilityRole="button"
+            accessibilityState={{ selected: finish === name }}
+            onPress={() => setFinish(name)}
+            style={[styles.finish, finish === name && styles.modeOn]}
+          >
+            <Text
+              style={[styles.finishText, finish === name && styles.modeTextOn]}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <GestureDetector gesture={gesture}>
         <View
           style={styles.stage}
@@ -248,6 +274,7 @@ export function TypeMeltScreen() {
                 count={count}
                 time={time}
                 blur={blur}
+                finish={finish}
               />
             </Canvas>
           )}
@@ -271,6 +298,15 @@ const styles = StyleSheet.create({
   modeOn: { backgroundColor: '#f2f2f2', borderColor: '#f2f2f2' },
   modeText: { color: '#aaa', fontSize: 14 },
   modeTextOn: { color: 'black' },
+  finishes: { marginTop: 8, gap: 6 },
+  finish: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#555',
+  },
+  finishText: { color: '#aaa', fontSize: 12 },
   stage: { flex: 1 },
   hint: { color: '#666', textAlign: 'center', fontSize: 12, marginBottom: 8 },
 });

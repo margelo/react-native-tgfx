@@ -14,7 +14,12 @@ import {
   type SpriteBuffer,
 } from 'react-native-tgfx';
 import type { HeightImage } from './heightImages';
-import { CHROME_SOURCE, chromeUniforms, softBlurPx } from './material';
+import {
+  CHROME_SOURCE,
+  chromeUniforms,
+  softBlurPx,
+  type FinishName,
+} from './material';
 import type { LetterValues, Value } from './sim';
 import { BLOB } from './state';
 import type { Word } from './word';
@@ -31,6 +36,8 @@ export interface LiquidSceneProps {
   time: Value | number;
   /** Fillet blur sigma in drawing pixels; grows as the letters melt (see `softBlurPx`). */
   blur: Value | number;
+  /** Defaults to the reference's iridescent glass. */
+  finish?: FinishName;
   reflection?: boolean;
 }
 
@@ -67,6 +74,7 @@ function Liquid({
   count,
   time,
   blur,
+  finish,
 }: LiquidSceneProps) {
   const scale = PixelRatio.get();
   const { fontSize } = word.data;
@@ -76,7 +84,7 @@ function Liquid({
       <RuntimeShader
         source={CHROME_SOURCE}
         inputName="content"
-        uniforms={{ ...chromeUniforms(scale, fontSize), uTime: time }}
+        uniforms={{ ...chromeUniforms(scale, fontSize, finish), uTime: time }}
         sampleRadiusPx={Math.ceil(1.5 * scale) + 1}
       />
       <Group>
