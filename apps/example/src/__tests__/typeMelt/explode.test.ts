@@ -86,3 +86,22 @@ test('a swipe during rebuild explodes again from where the droplets are', () => 
   expect(s.px[10]).toBe(x);
   expect(s.letterOpacity).toBe(0);
 });
+
+test('every droplet bursts outward, even with no swipe speed', () => {
+  const s = createState(fakeWord(), MODE_EXPLODE);
+  destroyExplode(s, { sx: 100, sy: 200, ex: 100, ey: 200, speed: 0 });
+  for (let i = 0; i < s.n; i++) {
+    expect(Math.hypot(s.vx[i]!, s.vy[i]!)).toBeGreaterThan(100);
+  }
+});
+
+test('droplets stay airborne long enough to be seen', () => {
+  const s = createState(fakeWord(), MODE_EXPLODE);
+  destroyExplode(s, swipe);
+  run(s, 30); // half a second in
+  let flying = 0;
+  for (let i = 0; i < s.n; i++) {
+    if (s.py[i]! < s.word.floorY - s.r[i]! - 1) flying++;
+  }
+  expect(flying / s.n).toBeGreaterThan(0.5);
+});
