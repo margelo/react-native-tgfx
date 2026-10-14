@@ -1,5 +1,6 @@
 import { destroyMelt, stepMelt } from '../../typeMelt/melt';
 import {
+  ANCHORS_PER_LETTER,
   CHAIN,
   MAX_ANCHORS,
   MODE_MELT,
@@ -32,17 +33,36 @@ function lowestHead(s: SimState) {
 const bottomOf = (s: SimState, i: number) =>
   s.ly[i]! + (s.word.h[i]! / 2) * s.lsy[i]!;
 
-test('at rest about half the anchors drip, none reaching the floor, with no puddle', () => {
+test('at rest each letter drips from one anchor, like the reference', () => {
   const s = createState(fakeWord(), MODE_MELT);
   run(s, 10);
-  const bottom = 250; // fakeWord letters end at y = 250, floor at 300
-  expect(lowestHead(s)).toBeGreaterThan(bottom + 4);
-  expect(lowestHead(s)).toBeLessThan(bottom + 0.7 * 50 + 1);
-  let still = 0;
-  for (let a = 0; a < MAX_ANCHORS; a++) if (s.stretch[a] === 0) still++;
-  expect(still).toBeGreaterThanOrEqual(4);
-  expect(still).toBeLessThanOrEqual(12);
+  for (let i = 0; i < 4; i++) {
+    let wet = 0;
+    for (
+      let a = i * ANCHORS_PER_LETTER;
+      a < (i + 1) * ANCHORS_PER_LETTER;
+      a++
+    ) {
+      if (s.stretch[a]! > 0) wet++;
+    }
+    expect(wet).toBe(1);
+  }
   expect(s.n).toBe(POOL_BASE);
+});
+
+test('at least one resting drip reaches the floor and spreads into a foot', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  run(s, 10);
+  const R = s.word.dropR * 1.2;
+  let feet = 0;
+  for (let a = 0; a < MAX_ANCHORS; a++) {
+    const head = a * CHAIN + CHAIN - 1;
+    if (s.r[head]! > 0 && s.py[head]! >= s.word.floorY - s.r[head]! - 0.5) {
+      expect(s.r[head]!).toBeCloseTo(R * 1.5);
+      feet++;
+    }
+  }
+  expect(feet).toBeGreaterThanOrEqual(1);
 });
 
 test('once destroyed, the letters keep melting until nothing stands', () => {
@@ -64,12 +84,18 @@ test('once destroyed, the letters keep melting until nothing stands', () => {
 });
 
 test('the puddle grows while the letters melt, and stays on the floor', () => {
+  // Volume, not drop count: a full puddle swells its drops instead of adding more.
+  const volume = (s: SimState) => {
+    let v = 0;
+    for (let k = POOL_BASE; k < s.n; k++) v += s.r[k]! * s.r[k]!;
+    return v;
+  };
   const s = createState(fakeWord(), MODE_MELT);
   destroyMelt(s, swipe);
   run(s, 4);
-  const early = s.n - POOL_BASE;
+  const early = volume(s);
   run(s, 8);
-  const later = s.n - POOL_BASE;
+  const later = volume(s);
   expect(early).toBeGreaterThan(0);
   expect(later).toBeGreaterThan(early);
   for (let k = POOL_BASE; k < s.n; k++) {

@@ -27,6 +27,8 @@ const MELT_START = 0.03;
 const MELT_ACCEL = 0.08;
 /** Puddle drops one whole letter's volume makes. */
 const DROPS_PER_LETTER = 40;
+/** A drip head resting on the floor, in drip radii. */
+const FOOT = 1.5;
 /** The largest a puddle drop grows, in drip radii. */
 const POOL_MAX = 2.2;
 /** Verlet velocity kept per 1/60 s: honey, not water. */
@@ -142,7 +144,7 @@ export function stepMelt(s: SimState, dt: number): void {
       const limit = destroyed ? gap * 1.2 : gap * s.reach[a]!;
       s.stretch[a] = Math.min(
         limit,
-        s.stretch[a]! + s.rate[a]! * (1 + s.boost[a]! * 4) * dt,
+        s.stretch[a]! + s.rate[a]! * (1 + s.boost[a]! * 2) * dt,
       );
     }
     s.boost[a] = s.boost[a]! * Math.exp(-BOOST_DECAY * dt);
@@ -196,14 +198,17 @@ export function stepMelt(s: SimState, dt: number): void {
         }
       }
     }
+    // A head resting on the floor spreads into a foot, as in the reference.
+    const head = base + CHAIN - 1;
+    // Measured against the head's current size, so a foot stays a foot.
+    const footed = s.py[head]! >= w.floorY - s.r[head]! - 0.5;
+    s.r[head] = footed ? R * FOOT : nodeRadius(R, CHAIN - 1);
+    if (footed) {
+      s.py[head] = s.oy[head] = w.floorY - R * FOOT;
+    }
     // A stream that has reached the floor keeps feeding the puddle: each link
     // it hands over shortens it, and the anchor keeps lengthening it.
-    const head = base + CHAIN - 1;
-    if (
-      destroyed &&
-      s.stretch[a]! > gap &&
-      s.py[head]! >= w.floorY - nodeRadius(R, CHAIN - 1) - 0.5
-    ) {
+    if (destroyed && footed && s.stretch[a]! > gap) {
       // One drop holds about 2.5 radii of strand, so not every link makes one.
       if (nextRand(s) < link / (2.5 * R)) {
         spawnPool(s, s.px[head]!, R);

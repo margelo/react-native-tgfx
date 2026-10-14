@@ -238,6 +238,9 @@ export function finishRebuild(s: SimState): void {
   resetMode(s);
 }
 
+/** A resting drip with this reach (share of the gap to the floor) lands on it. */
+const REACH_FLOOR = 1.1;
+
 export function createState(word: WordData, mode: number): SimState {
   'worklet';
   const s: SimState = {
@@ -278,8 +281,41 @@ export function createState(word: WordData, mode: number): SimState {
   };
   for (let a = 0; a < MAX_ANCHORS; a++) {
     s.rate[a] = 6 + 12 * nextRand(s);
-    // About half the anchors stay dry at rest, the rest hang at varied lengths.
-    s.reach[a] = nextRand(s) < 0.5 ? 0 : 0.2 + 0.5 * nextRand(s);
+  }
+  // Like the reference: each letter drips from one anchor; some drips are
+  // short, and at least one runs all the way to the floor.
+  let longest = -1;
+  let lastWet = -1;
+  for (let i = 0; i < LETTERS; i++) {
+    let used = 0;
+    for (
+      let a = i * ANCHORS_PER_LETTER;
+      a < (i + 1) * ANCHORS_PER_LETTER;
+      a++
+    ) {
+      if (!Number.isNaN(word.anchors[a * 2]!)) used++;
+    }
+    let pick = (nextRand(s) * used) | 0;
+    for (
+      let a = i * ANCHORS_PER_LETTER;
+      a < (i + 1) * ANCHORS_PER_LETTER;
+      a++
+    ) {
+      s.reach[a] = 0;
+      if (Number.isNaN(word.anchors[a * 2]!) || pick-- !== 0) {
+        continue;
+      }
+      lastWet = a;
+      if (nextRand(s) < 0.4) {
+        s.reach[a] = REACH_FLOOR;
+        longest = a;
+      } else {
+        s.reach[a] = 0.2 + 0.25 * nextRand(s);
+      }
+    }
+  }
+  if (longest < 0 && lastWet >= 0) {
+    s.reach[lastWet] = REACH_FLOOR;
   }
   resetMode(s);
   return s;
