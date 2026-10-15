@@ -3,10 +3,10 @@
 
 export const CAP = 2048;
 export const LETTERS = 4;
-export const CHAIN = 24;
+export const CHAIN = 18;
 /** Per letter: drip anchors on the bottom edge first, then on the top edge. */
 export const BOTTOM_ANCHORS = 4;
-export const TOP_ANCHORS = 2;
+export const TOP_ANCHORS = 1;
 export const ANCHORS_PER_LETTER = BOTTOM_ANCHORS + TOP_ANCHORS;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 10;
