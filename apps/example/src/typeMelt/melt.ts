@@ -43,6 +43,7 @@ export function destroyMelt(s: SimState, imp: Impulse): void {
     for (let a = 0; a < MAX_ANCHORS; a++) {
       const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
       s.wait[a] = top ? 0.2 + 1.8 * nextRand(s) : 0;
+      s.dropT[a] = 1.5 + 2.5 * nextRand(s);
     }
   }
   s.phase = PHASE_DESTROYED;
@@ -66,8 +67,11 @@ export function destroyMelt(s: SimState, imp: Impulse): void {
   }
 }
 
-/** Adds a puddle drop at x, or swells an existing one when the puddle is full. */
-function spawnPool(s: SimState, x: number, R: number): void {
+/**
+ * Adds a puddle drop at x, or swells an existing one when the puddle is full.
+ * Given a height `y` above the floor, the drop starts there and falls.
+ */
+function spawnPool(s: SimState, x: number, R: number, y = -1): void {
   'worklet';
   if (s.poolN >= POOL_CAP) {
     const k = POOL_BASE + ((nextRand(s) * POOL_CAP) | 0);
@@ -79,7 +83,8 @@ function spawnPool(s: SimState, x: number, R: number): void {
   s.px[k] = x;
   s.vx[k] = (nextRand(s) - 0.5) * 60;
   s.r[k] = R * (0.6 + 0.9 * nextRand(s));
-  s.py[k] = s.word.floorY - s.r[k]! * 0.55;
+  s.py[k] = y >= 0 ? y : s.word.floorY - s.r[k]! * 0.55;
+  s.vy[k] = 0;
 }
 
 export function stepMelt(s: SimState, dt: number): void {
@@ -216,6 +221,16 @@ export function stepMelt(s: SimState, dt: number): void {
     if (footed) {
       s.py[head] = s.oy[head] = w.floorY - R * FOOT;
     }
+    // Spilling: a long drip that hasn't reached the floor swells and lets go
+    // of a drop now and then, then pulls back up and builds the next one.
+    if (destroyed && !footed && s.stretch[a]! > gap * 0.4) {
+      s.dropT[a] = s.dropT[a]! - dt;
+      if (s.dropT[a]! <= 0) {
+        spawnPool(s, s.px[head]!, R, s.py[head]!);
+        s.stretch[a] = s.stretch[a]! * 0.55;
+        s.dropT[a] = 1.2 + 2.5 * nextRand(s);
+      }
+    }
     // A stream that has reached the floor keeps feeding the puddle: each link
     // it hands over shortens it, and the anchor keeps lengthening it.
     if (destroyed && footed && s.stretch[a]! > gap) {
@@ -236,7 +251,19 @@ export function stepMelt(s: SimState, dt: number): void {
     const r = s.r[k]!;
     s.px[k] = Math.min(w.width - r, Math.max(r, s.px[k]! + s.vx[k]! * dt));
     // Sunk a little into the floor, so the puddle reads flat.
-    s.py[k] = w.floorY - r * 0.55;
+    const rest = w.floorY - r * 0.55;
+    if (s.py[k]! < rest - 0.5) {
+      // A falling drop: gravity until it lands, then a little splash sideways.
+      s.vy[k] = s.vy[k]! + GRAVITY * dt;
+      s.py[k] = s.py[k]! + s.vy[k]! * dt;
+      if (s.py[k]! >= rest) {
+        s.py[k] = rest;
+        s.vy[k] = 0;
+        s.vx[k] = s.vx[k]! + (nextRand(s) - 0.5) * 80;
+      }
+    } else {
+      s.py[k] = rest;
+    }
   }
   if (rebuilding) {
     let drained = true;

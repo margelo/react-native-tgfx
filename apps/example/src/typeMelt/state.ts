@@ -102,6 +102,8 @@ export interface SimState {
   reach: Float32Array;
   /** Seconds before each anchor starts running once the melt begins. */
   wait: Float32Array;
+  /** Seconds until each running drip lets go of its next drop. */
+  dropT: Float32Array;
   boost: Float32Array;
   /** Live puddle sprites, from POOL_BASE. */
   poolN: number;
@@ -305,6 +307,7 @@ export function createState(word: WordData, mode: number): SimState {
     rate: new Float32Array(MAX_ANCHORS),
     reach: new Float32Array(MAX_ANCHORS),
     wait: new Float32Array(MAX_ANCHORS),
+    dropT: new Float32Array(MAX_ANCHORS),
     boost: new Float32Array(MAX_ANCHORS),
     poolN: 0,
     meltT: 0,

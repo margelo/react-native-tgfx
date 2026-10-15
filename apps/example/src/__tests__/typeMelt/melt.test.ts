@@ -300,3 +300,21 @@ test('while melting, only the resting drip and the top streams run', () => {
     expect(running).toBeLessThanOrEqual(1 + TOP_ANCHORS);
   }
 });
+
+test('drips let go of drops that fall and land in the puddle', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+  let sawFalling = false;
+  for (let k = 0; k < 60 * 12; k++) {
+    stepMelt(s, 1 / 60);
+    for (let q = POOL_BASE; q < s.n; q++) {
+      if (s.py[q]! < s.word.floorY - s.r[q]! - 4) sawFalling = true;
+    }
+  }
+  expect(sawFalling).toBe(true);
+  // Drops land: after a long settle with the melt done, none stay in the air.
+  run(s, 30);
+  for (let q = POOL_BASE; q < s.n; q++) {
+    expect(s.py[q]!).toBeCloseTo(s.word.floorY - s.r[q]! * 0.55, 1);
+  }
+});
