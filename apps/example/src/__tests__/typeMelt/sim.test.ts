@@ -7,17 +7,10 @@ import {
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
-  SPREAD,
   createState,
 } from '../../typeMelt/state';
-import {
-  destroy,
-  publish,
-  rebuild,
-  setMode,
-  step,
-  type LetterValues,
-} from '../../typeMelt/sim';
+import { MESH_VERTS, updateMelted } from '../../typeMelt/meshMelt';
+import { destroy, publish, rebuild, setMode, step } from '../../typeMelt/sim';
 import { fakeWord } from '../../__fixtures__/typeMelt/fakeWord';
 
 // The package's build output isn't present under Jest, so the mock is virtual.
@@ -82,52 +75,43 @@ test('rebuild only starts from destroyed', () => {
   expect(s.phase).toBe(PHASE_REBUILDING);
 });
 
-test('publish writes sprite scale and centre, letter values and a count that always moves', () => {
+const meshes = () =>
+  Array.from({ length: 4 }, () => new Float32Array(MESH_VERTS * 2));
+
+test('publish writes sprites, letter meshes, and a count that always moves', () => {
   const s = createState(fakeWord(), MODE_EXPLODE);
   destroy(s, swipe);
   step(s, 1 / 60);
   const f = new Float32Array(s.n * SPRITE_FLOATS);
   const v = () => ({ value: -1 });
-  const letters: LetterValues[] = Array.from({ length: 4 }, () => ({
-    x: v(),
-    y: v(),
-    rot: v(),
-    sx: v(),
-    sy: v(),
-  }));
+  const m = meshes();
   const opacity = v();
   const count = v();
   const melt = v();
-  publish(s, f, letters, opacity, count, melt, 1234.5);
+  publish(s, f, m, opacity, count, melt, 1234.5);
   expect(melt.value).toBe(0);
   expect(f[4]).toBeCloseTo(s.r[0]! / (BLOB / 2));
   expect(f[5]).toBe(s.px[0]);
   expect(f[6]).toBe(s.py[0]);
-  expect(letters[2]!.x.value).toBe(s.lx[2]);
-  expect(letters[2]!.sy.value).toBe(s.lsy[2]);
-  expect(letters[2]!.sx.value).toBe(1);
+  // Letter 2's mesh starts at its tube rect's top-left corner, at home.
+  expect(m[2]![0]).toBeCloseTo(240 - 35);
+  expect(m[2]![1]).toBeCloseTo(200 - 55);
   expect(opacity.value).toBe(0);
   expect(Math.floor(count.value)).toBe(s.n);
   expect(count.value).not.toBe(s.n);
 });
 
-test('publish widens a slumping letter as it flattens', () => {
+test('publish reports how melted the word is and bends its meshes', () => {
   const s = createState(fakeWord(), MODE_MELT);
-  s.lsy[1] = 0.25;
+  s.meltT = 30;
+  updateMelted(s);
   const v = () => ({ value: -1 });
-  const letters: LetterValues[] = Array.from({ length: 4 }, () => ({
-    x: v(),
-    y: v(),
-    rot: v(),
-    sx: v(),
-    sy: v(),
-  }));
+  const m = meshes();
   const melt = v();
-  publish(s, new Float32Array(s.n * SPRITE_FLOATS), letters, v(), v(), melt, 0);
-  expect(letters[1]!.sx.value).toBeCloseTo(1 + SPREAD * 0.75);
-  expect(letters[0]!.sx.value).toBe(1);
-  // How melted the word is overall: the mean of (1 - lsy).
-  expect(melt.value).toBeCloseTo(0.75 / 4);
+  publish(s, new Float32Array(s.n * SPRITE_FLOATS), m, v(), v(), melt, 0);
+  expect(melt.value).toBeGreaterThan(0.5);
+  // The top-left vertex of a melted letter has come down near the floor.
+  expect(m[0]![1]!).toBeGreaterThan(250);
 });
 
 describe('melt runs by itself', () => {
@@ -162,7 +146,7 @@ describe('melt runs by itself', () => {
   test('after melting completely it holds, rebuilds, then melts again', () => {
     const s = createState(fakeWord(), MODE_MELT);
     const flat = () =>
-      s.phase === PHASE_DESTROYED && Array.from(s.lsy).every(v => v === 0);
+      s.phase === PHASE_DESTROYED && Array.from(s.melted).every(v => v > 0.999);
     expect(settle(s, flat, 40)).toBe(true);
     // It holds the puddle for a moment rather than snapping straight back.
     for (let k = 0; k < 60; k++) step(s, 1 / 60);

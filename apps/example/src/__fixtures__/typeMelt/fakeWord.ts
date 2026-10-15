@@ -59,6 +59,10 @@ export function fakeWord(): WordData {
     anchors,
     circles,
     circleR: new Float32Array(LETTERS).fill(15),
+    // The 60×100 letter box padded by 5 on every side.
+    tube: new Float32Array(
+      Array.from({ length: LETTERS }, () => [-35, -55, 70, 110]).flat(),
+    ),
     dropR: 4.5,
     seed: 1,
   };

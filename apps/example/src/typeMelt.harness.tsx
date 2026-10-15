@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PixelRatio } from 'react-native';
-import { makeMutable } from 'react-native-reanimated';
 import { describe, expect, render, test } from 'react-native-harness';
 import {
+  createVertexBuffer,
   pathContains,
   useFonts,
   useOffscreenImage,
@@ -10,13 +10,21 @@ import {
 } from 'react-native-tgfx';
 import { buildHeightImages, type HeightImage } from './typeMelt/heightImages';
 import { BlobSprite, LiquidScene } from './typeMelt/LiquidScene';
-import type { LetterValues } from './typeMelt/sim';
+import {
+  MESH_INDICES,
+  MESH_VERTS,
+  gridIndices,
+  gridTextures,
+  writeMesh,
+} from './typeMelt/meshMelt';
 import {
   ANCHORS_PER_LETTER,
   BLOB,
   CAP,
   CIRCLES_PER_LETTER,
   LETTERS,
+  MODE_MELT,
+  createState,
 } from './typeMelt/state';
 import { FAMILY, FONT_FILES, buildWord, type Word } from './typeMelt/word';
 import { Stage, STAGE_SIZE, sleep, snapshot } from './testSupport';
@@ -124,15 +132,15 @@ describe('TypeMelt material', () => {
       { width: BLOB, height: BLOB, pixelRatio: 1 },
       [],
     );
-    // Real shared values, as the screen passes: the compiler binds slots for them.
-    const [letters] = useState<LetterValues[]>(() =>
-      Array.from({ length: LETTERS }, () => ({
-        x: makeMutable(0),
-        y: makeMutable(0),
-        rot: makeMutable(0),
-        sx: makeMutable(1),
-        sy: makeMutable(1),
-      })),
+    // The same mesh buffers the screen uses, with rest positions written once.
+    const [meshes] = useState(() =>
+      Array.from({ length: LETTERS }, () =>
+        createVertexBuffer({
+          maxVertices: MESH_VERTS,
+          maxIndices: MESH_INDICES,
+          textures: true,
+        }),
+      ),
     );
     const [heights, setHeights] = useState<HeightImage[] | null>(null);
     useEffect(() => {
@@ -143,15 +151,19 @@ describe('TypeMelt material', () => {
       if (heights && blob) onReady();
     }, [heights, blob, onReady]);
     if (!word || !heights) return null;
-    for (let i = 0; i < LETTERS; i++) {
-      letters[i]!.x.value = word.data.cx[i]!;
-      letters[i]!.y.value = word.data.cy[i]!;
-    }
+    const rest = createState(word.data, MODE_MELT);
+    const indices = gridIndices();
+    heights.forEach((h, i) => {
+      const m = meshes[i]!;
+      m.indices.set(indices);
+      m.textures.set(gridTextures(h.image.width, h.image.height));
+      writeMesh(rest, i, m.positions);
+    });
     return (
       <LiquidScene
         word={word}
         heights={heights}
-        letters={letters}
+        meshes={meshes}
         letterOpacity={1}
         blob={blob}
         sprites={sprites}

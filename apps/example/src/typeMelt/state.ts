@@ -10,6 +10,10 @@ export const TOP_ANCHORS = 2;
 export const ANCHORS_PER_LETTER = BOTTOM_ANCHORS + TOP_ANCHORS;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 10;
+/** Control columns across each letter, each melting on its own schedule. */
+export const MELT_COLS = 8;
+/** Seconds one column takes to melt once it starts. */
+export const MELT_DURATION = 11;
 /** Melt's puddle lives after the drip chains in the sprite buffer. */
 export const POOL_BASE = MAX_ANCHORS * CHAIN;
 export const POOL_CAP = 400;
@@ -48,6 +52,8 @@ export interface WordData {
   /** Collision circle centres in letter-local points, x/y pairs, CIRCLES_PER_LETTER per letter. */
   circles: Float32Array;
   circleR: Float32Array;
+  /** Per letter: the tube height image's rect in letter-local points, x, y, w, h. */
+  tube: Float32Array;
   /** Droplet radius, points. */
   dropR: number;
   seed: number;
@@ -99,6 +105,14 @@ export interface SimState {
   boost: Float32Array;
   /** Live puddle sprites, from POOL_BASE. */
   poolN: number;
+  /** Melt clock, seconds: advances while melting, rewinds while rebuilding. */
+  meltT: number;
+  /** Per letter × MELT_COLS: when each control column starts to melt, seconds. */
+  cstart: Float32Array;
+  /** Per letter: how melted it is, 0..1 (the mean of its columns). */
+  melted: Float32Array;
+  /** When the last column finishes melting: the melt clock stops there. */
+  meltEnd: number;
   /** Melt mode melts by itself, holds the puddle, rebuilds and loops. */
   autoMelt: boolean;
   /** Seconds in the current phase, and the phase it counts for. */
@@ -114,6 +128,7 @@ export interface SimState {
   tmp: Float32Array;
   tmpA: Float32Array;
   tmpB: Float32Array;
+  tmpCols: Float32Array;
 }
 
 export function nextRand(s: SimState): number {
@@ -210,6 +225,10 @@ export function resetMode(s: SimState): void {
   s.letterOpacity = 1;
   s.poolN = 0;
   s.flatT = 0;
+  s.meltT = 0;
+  for (let i = 0; i < LETTERS; i++) {
+    s.melted[i] = 0;
+  }
   for (let i = 0; i < LETTERS; i++) {
     s.emitAcc[i] = 0;
   }
@@ -286,6 +305,10 @@ export function createState(word: WordData, mode: number): SimState {
     wait: new Float32Array(MAX_ANCHORS),
     boost: new Float32Array(MAX_ANCHORS),
     poolN: 0,
+    meltT: 0,
+    cstart: new Float32Array(LETTERS * MELT_COLS),
+    melted: new Float32Array(LETTERS),
+    meltEnd: 0,
     autoMelt: true,
     phaseT: 0,
     lastPhase: PHASE_INTACT,
@@ -296,7 +319,30 @@ export function createState(word: WordData, mode: number): SimState {
     tmp: new Float32Array(2),
     tmpA: new Float32Array(2),
     tmpB: new Float32Array(2),
+    tmpCols: new Float32Array(MELT_COLS),
   };
+  // Each letter melts column by column: smoothed noise staggers the columns,
+  // and the letters start one after another.
+  for (let i = 0; i < LETTERS; i++) {
+    const o = i * MELT_COLS;
+    for (let c = 0; c < MELT_COLS; c++) {
+      s.cstart[o + c] = nextRand(s);
+    }
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let c = 0; c < MELT_COLS; c++) {
+      const l = s.cstart[o + Math.max(0, c - 1)]!;
+      const r = s.cstart[o + Math.min(MELT_COLS - 1, c + 1)]!;
+      s.tmpCols[c] = (l + 2 * s.cstart[o + c]! + r) / 4;
+      lo = Math.min(lo, s.tmpCols[c]!);
+      hi = Math.max(hi, s.tmpCols[c]!);
+    }
+    for (let c = 0; c < MELT_COLS; c++) {
+      const n = hi > lo ? (s.tmpCols[c]! - lo) / (hi - lo) : 0.5;
+      s.cstart[o + c] = 0.3 + i * 0.5 + 1.2 * n;
+      s.meltEnd = Math.max(s.meltEnd, s.cstart[o + c]! + MELT_DURATION);
+    }
+  }
   for (let a = 0; a < MAX_ANCHORS; a++) {
     // Top-edge liquid runs faster: it has a whole letter to cover.
     const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;

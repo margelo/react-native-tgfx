@@ -11,8 +11,11 @@ import {
   RadialGradient,
   Rect,
   RuntimeShader,
-  TgfxImage,
+  ImageShader,
+  Vertices,
   type SpriteBuffer,
+  type TgfxImage,
+  type VertexBuffer,
 } from 'react-native-tgfx';
 import type { HeightImage } from './heightImages';
 import {
@@ -22,7 +25,8 @@ import {
   softBlurPx,
   type FinishName,
 } from './material';
-import type { LetterValues, Value } from './sim';
+import { MESH_INDICES, MESH_VERTS } from './meshMelt';
+import type { Value } from './sim';
 import { BLOB } from './state';
 import type { Word } from './word';
 
@@ -30,7 +34,8 @@ export interface LiquidSceneProps {
   word: Word;
   /** Per-letter tube heights; nothing is drawn for the letters until they exist. */
   heights: HeightImage[] | null;
-  letters: LetterValues[];
+  /** Per-letter mesh over its tube image: positions written every frame, rigid or melting. */
+  meshes: VertexBuffer[];
   letterOpacity: Value | number;
   blob: TgfxImage | null;
   sprites: SpriteBuffer;
@@ -69,7 +74,7 @@ export function BlobSprite() {
 /** The height field itself: tube letters and sphere droplets, white with alpha = height. */
 function HeightField({
   heights,
-  letters,
+  meshes,
   letterOpacity,
   blob,
   sprites,
@@ -79,25 +84,16 @@ function HeightField({
     <>
       <Group opacity={letterOpacity}>
         {heights?.map((tube, i) => (
-          <Group
+          // The tube image stretched over a grid the sim bends: texture
+          // coordinates are image pixels, so the shader samples it 1:1.
+          <Vertices
             key={i}
-            transform={[
-              { translateX: letters[i]!.x },
-              { translateY: letters[i]!.y },
-              { rotate: letters[i]!.rot },
-              { scaleX: letters[i]!.sx },
-              { scaleY: letters[i]!.sy },
-            ]}
+            buffer={meshes[i]!}
+            vertexCount={MESH_VERTS}
+            indexCount={MESH_INDICES}
           >
-            <TgfxImage
-              image={tube.image}
-              x={tube.x}
-              y={tube.y}
-              width={tube.width}
-              height={tube.height}
-              fit="fill"
-            />
-          </Group>
+            <ImageShader image={tube.image} />
+          </Vertices>
         ))}
       </Group>
       {blob && <Atlas image={blob} buffer={sprites} count={count} />}

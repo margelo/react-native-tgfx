@@ -3,6 +3,7 @@
 import { SPRITE_FLOATS } from 'react-native-tgfx';
 import { destroyExplode, stepExplode } from './explode';
 import { destroyFall, stepFall } from './fall';
+import { writeMesh } from './meshMelt';
 import { destroyMelt, stepMelt } from './melt';
 import {
   BLOB,
@@ -13,7 +14,6 @@ import {
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
-  SPREAD,
   type Impulse,
   type SimState,
 } from './state';
@@ -21,14 +21,6 @@ import {
 /** Structurally a Reanimated SharedValue<number>; plain objects in tests. */
 export interface Value {
   value: number;
-}
-
-export interface LetterValues {
-  x: Value;
-  y: Value;
-  rot: Value;
-  sx: Value;
-  sy: Value;
 }
 
 /** Seconds the word stands before it starts to melt by itself. */
@@ -49,7 +41,7 @@ function autoMelt(s: SimState, dt: number): void {
     return;
   }
   for (let i = 0; i < LETTERS; i++) {
-    if (s.lsy[i] !== 0) {
+    if (s.melted[i]! < 0.999) {
       s.flatT = 0;
       return;
     }
@@ -115,7 +107,7 @@ export function setMode(s: SimState, mode: number): void {
 export function publish(
   s: SimState,
   f: Float32Array,
-  letters: LetterValues[],
+  meshes: Float32Array[],
   opacity: Value,
   count: Value,
   melt: Value,
@@ -128,18 +120,14 @@ export function publish(
     f[o + 5] = s.px[i]!;
     f[o + 6] = s.py[i]!;
   }
+  // Every letter is a grid over its tube image: bent in melt mode, rigid otherwise.
   let melted = 0;
   for (let i = 0; i < LETTERS; i++) {
-    melted += 1 - s.lsy[i]!;
-    const l = letters[i]!;
-    l.x.value = s.lx[i]!;
-    l.y.value = s.ly[i]!;
-    l.rot.value = s.la[i]!;
-    l.sx.value = 1 + SPREAD * (1 - s.lsy[i]!);
-    l.sy.value = s.lsy[i]!;
+    writeMesh(s, i, meshes[i]!);
+    melted += s.mode === MODE_MELT ? s.melted[i]! : 0;
   }
   opacity.value = s.letterOpacity;
-  // How melted the word is overall, 0..1: softens the height field's blur.
+  // How melted the word is overall, 0..1: the shader softens the surface with it.
   melt.value = melted / LETTERS;
   // Reanimated drops same-value writes, so a constant count would never wake the
   // renderer after a buffer refill; the fraction truncates natively.

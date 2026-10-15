@@ -4,7 +4,6 @@ import {
   Group,
   Path,
   imageFromPixels,
-  pathBounds,
   renderToImage,
   type TgfxImage,
 } from 'react-native-tgfx';
@@ -30,17 +29,15 @@ export async function buildHeightImages(
   word: Word,
   scale: number,
 ): Promise<HeightImage[]> {
-  const { fontSize } = word.data;
-  const pad = word.strokeWidth / 2 + fontSize * ROUND_EM * 3 + 2;
+  const { fontSize, tube } = word.data;
   const out: HeightImage[] = [];
   try {
     for (let i = 0; i < word.paths.length; i++) {
       const path = word.paths[i]!;
-      const b = pathBounds(path, true);
-      const x = b.x - pad;
-      const y = b.y - pad;
-      const width = b.width + pad * 2;
-      const height = b.height + pad * 2;
+      const x = tube[i * 4]!;
+      const y = tube[i * 4 + 1]!;
+      const width = tube[i * 4 + 2]!;
+      const height = tube[i * 4 + 3]!;
       const raster = await renderToImage(
         <Group transform={[{ translateX: -x }, { translateY: -y }]}>
           {/* tgfx takes the sigma in drawing pixels, not points. */}

@@ -2,15 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  makeMutable,
-  useFrameCallback,
-  useSharedValue,
-} from 'react-native-reanimated';
+import { useFrameCallback, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnUI } from 'react-native-worklets';
 import {
   Canvas,
   SPRITE_FLOATS,
+  createVertexBuffer,
+  meshViews,
   spriteFloats,
   useClock,
   useFonts,
@@ -21,13 +19,12 @@ import { buildHeightImages, type HeightImage } from './heightImages';
 import { type FinishName } from './material';
 import { BlobSprite, LiquidScene } from './LiquidScene';
 import {
-  destroy,
-  publish,
-  rebuild,
-  setMode,
-  step,
-  type LetterValues,
-} from './sim';
+  MESH_INDICES,
+  MESH_VERTS,
+  gridIndices,
+  gridTextures,
+} from './meshMelt';
+import { destroy, publish, rebuild, setMode, step } from './sim';
 import {
   BLOB,
   CAP,
@@ -56,7 +53,7 @@ const MODES = [
 
 // The sim lives on the UI runtime, not in a worklet closure: closures are
 // re-serialised when the component re-renders, which would fork the state.
-type Holder = { __typeMelt?: SimState };
+type Holder = { __typeMelt?: SimState; __typeMeltMeshes?: Float32Array[] };
 
 function stateOf(): SimState | undefined {
   'worklet';
@@ -78,15 +75,21 @@ export function TypeMeltScreen() {
     [fontsReady, size],
   );
 
-  const [letters] = useState<LetterValues[]>(() =>
-    Array.from({ length: LETTERS }, () => ({
-      x: makeMutable(0),
-      y: makeMutable(0),
-      rot: makeMutable(0),
-      sx: makeMutable(1),
-      sy: makeMutable(1),
-    })),
+  // One mesh per letter over its tube image. Topology and texture coordinates
+  // are set once here; the frame callback rewrites the positions.
+  const [meshes] = useState(() =>
+    Array.from({ length: LETTERS }, () =>
+      createVertexBuffer({
+        maxVertices: MESH_VERTS,
+        maxIndices: MESH_INDICES,
+        textures: true,
+      }),
+    ),
   );
+  useEffect(() => {
+    const indices = gridIndices();
+    meshes.forEach(m => m.indices.set(indices));
+  }, [meshes]);
   const letterOpacity = useSharedValue(1);
   const count = useSharedValue(0);
   const melt = useSharedValue(0);
@@ -128,6 +131,12 @@ export function TypeMeltScreen() {
   }, [word]);
 
   useEffect(() => {
+    heights?.forEach((h, i) => {
+      meshes[i]!.textures.set(gridTextures(h.image.width, h.image.height));
+    });
+  }, [heights, meshes]);
+
+  useEffect(() => {
     for (let i = 0; i < CAP; i++) {
       sprites.data[i * SPRITE_FLOATS + 2] = BLOB;
       sprites.data[i * SPRITE_FLOATS + 3] = BLOB;
@@ -144,26 +153,32 @@ export function TypeMeltScreen() {
     scheduleOnUI(() => {
       'worklet';
       (globalThis as Holder).__typeMelt = createState(data, start);
+      // The UI runtime's views over the mesh buffers, made once, not per frame.
+      (globalThis as Holder).__typeMeltMeshes = meshes.map(
+        m => meshViews(m).positions,
+      );
     });
     return () => {
       scheduleOnUI(() => {
         'worklet';
         delete (globalThis as Holder).__typeMelt;
+        delete (globalThis as Holder).__typeMeltMeshes;
       });
     };
-  }, [word]);
+  }, [word, meshes]);
 
   useFrameCallback(frame => {
     'worklet';
     const s = stateOf();
-    if (!s) {
+    const positions = (globalThis as Holder).__typeMeltMeshes;
+    if (!s || !positions) {
       return;
     }
     step(s, (frame.timeSincePreviousFrame ?? 16) / 1000);
     publish(
       s,
       spriteFloats(sprites),
-      letters,
+      positions,
       letterOpacity,
       count,
       melt,
@@ -263,7 +278,7 @@ export function TypeMeltScreen() {
               <LiquidScene
                 word={word}
                 heights={heights}
-                letters={letters}
+                meshes={meshes}
                 letterOpacity={letterOpacity}
                 blob={blob}
                 sprites={sprites}

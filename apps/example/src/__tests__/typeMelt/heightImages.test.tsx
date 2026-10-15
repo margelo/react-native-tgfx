@@ -30,7 +30,7 @@ import { buildHeightImages } from '../../typeMelt/heightImages';
 import type { Word } from '../../typeMelt/word';
 
 const word = {
-  data: { fontSize: 100 },
+  data: { fontSize: 100, tube: new Float32Array(16).fill(10) },
   paths: ['M0 0', 'M0 0', 'M0 0', 'M0 0'],
   strokeWidth: 10,
   strokeWidths: [10, 10, 10, 10],

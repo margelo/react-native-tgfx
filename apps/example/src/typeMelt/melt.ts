@@ -1,7 +1,8 @@
-// Melt: Verlet drip chains hang from anchors on the letters' bottom edges and
-// lengthen at a per-anchor rate. Once destroyed, the letters keep softening
-// until they lie flat on the floor: their melted volume and every drip that
-// lands feed a puddle that spreads as it grows.
+// Melt: the letters bend column by column (meshMelt.ts) on a melt clock until
+// they lie in a puddle; rebuilding rewinds the clock. Verlet drip chains hang
+// from points on the bending letters, and their landings plus the letters'
+// melted volume feed a puddle of sprites that spreads as it grows.
+import { meltPoint, updateMelted } from './meshMelt';
 import {
   ANCHORS_PER_LETTER,
   BOTTOM_ANCHORS,
@@ -13,19 +14,16 @@ import {
   PHASE_REBUILDING,
   POOL_BASE,
   POOL_CAP,
-  SPREAD,
   distToSegment,
   finishRebuild,
-  letterPoint,
   nextRand,
   nodeRadius,
   type Impulse,
   type SimState,
 } from './state';
 
-/** Melt speed in letter heights per second: slow at first, faster as the letter softens. */
-const MELT_START = 0.03;
-const MELT_ACCEL = 0.08;
+/** Rebuilding rewinds the melt clock this many times faster than it ran. */
+const REWIND = 6;
 /** Puddle drops one whole letter's volume makes. */
 const DROPS_PER_LETTER = 40;
 /** A drip head resting on the floor, in drip radii. */
@@ -55,7 +53,7 @@ export function destroyMelt(s: SimState, imp: Impulse): void {
     if (Number.isNaN(ax)) {
       continue;
     }
-    letterPoint(
+    meltPoint(
       s,
       (a / ANCHORS_PER_LETTER) | 0,
       ax,
@@ -90,46 +88,36 @@ export function stepMelt(s: SimState, dt: number): void {
   const rebuilding = s.phase === PHASE_REBUILDING;
   const destroyed = s.phase === PHASE_DESTROYED;
   const R = w.dropR * 1.2;
-  let settled = true;
-  for (let i = 0; i < LETTERS; i++) {
-    if (destroyed) {
-      let boost = 0;
-      for (
-        let a = i * ANCHORS_PER_LETTER;
-        a < (i + 1) * ANCHORS_PER_LETTER;
-        a++
-      ) {
-        boost = Math.max(boost, s.boost[a]!);
-      }
-      // A swipe hurries the melt along, but at most by 1.8×.
-      const rate =
-        (MELT_START + MELT_ACCEL * (1 - s.lsy[i]!)) *
-        (1 + Math.min(boost / 4, 1) * 0.8);
-      const before = s.lsy[i]!;
-      s.lsy[i] = Math.max(0, before - rate * dt);
-      s.emitAcc[i] = s.emitAcc[i]! + (before - s.lsy[i]!) * DROPS_PER_LETTER;
-      while (s.emitAcc[i]! >= 1) {
-        s.emitAcc[i] = s.emitAcc[i]! - 1;
-        // Bunched under the letter (a triangular spread), so each letter
-        // leaves its own puddle rather than one even bar.
-        const spread = w.w[i]! * (1 + SPREAD * (1 - s.lsy[i]!));
-        const off = (nextRand(s) + nextRand(s) - 1) * spread * 0.6;
-        spawnPool(s, s.lx[i]! + off, R);
-      }
-    } else if (rebuilding) {
-      s.lsy[i] = s.lsy[i]! + (1 - s.lsy[i]!) * Math.min(1, dt * 3);
-      if (Math.abs(s.lsy[i]! - 1) < 0.002) {
-        s.lsy[i] = 1;
-      }
+  if (destroyed) {
+    // A swipe hurries the melt along, but at most by 1.8×.
+    let boost = 0;
+    for (let a = 0; a < MAX_ANCHORS; a++) {
+      boost = Math.max(boost, s.boost[a]!);
     }
-    settled = settled && s.lsy[i] === 1;
-    // Slump onto the floor: the bottom edge slides from where it stood down
-    // to the floor while the letter flattens.
-    const bottom = w.cy[i]! + w.h[i]! / 2;
-    s.ly[i] =
-      bottom +
-      (w.floorY - bottom) * (1 - s.lsy[i]!) -
-      (w.h[i]! / 2) * s.lsy[i]!;
+    s.meltT = Math.min(
+      s.meltEnd,
+      s.meltT + dt * (1 + Math.min(boost / 4, 1) * 0.8),
+    );
+  } else if (rebuilding) {
+    s.meltT = Math.max(0, s.meltT - dt * REWIND);
+  }
+  for (let i = 0; i < LETTERS; i++) {
+    s.tmpCols[i] = s.melted[i]!;
+  }
+  updateMelted(s);
+  let settled = s.meltT === 0;
+  for (let i = 0; i < LETTERS; i++) {
+    if (!destroyed) {
+      continue;
+    }
+    // Melted volume runs off into the puddle, bunched under its letter.
+    const gained = Math.max(0, s.melted[i]! - s.tmpCols[i]!);
+    s.emitAcc[i] = s.emitAcc[i]! + gained * DROPS_PER_LETTER;
+    while (s.emitAcc[i]! >= 1) {
+      s.emitAcc[i] = s.emitAcc[i]! - 1;
+      const off = (nextRand(s) + nextRand(s) - 1) * w.w[i]! * 0.9;
+      spawnPool(s, w.cx[i]! + off, R);
+    }
   }
   const keep = Math.pow(VISCOUS, dt * 60);
   const g = GRAVITY * 0.35 * dt * dt;
@@ -139,7 +127,7 @@ export function stepMelt(s: SimState, dt: number): void {
       continue;
     }
     const base = a * CHAIN;
-    letterPoint(
+    meltPoint(
       s,
       (a / ANCHORS_PER_LETTER) | 0,
       ax,
@@ -163,8 +151,8 @@ export function stepMelt(s: SimState, dt: number): void {
     s.boost[a] = s.boost[a]! * Math.exp(-BOOST_DECAY * dt);
     settled = settled && s.stretch[a] === 0;
     const link = s.stretch[a]! / (CHAIN - 1);
-    // The drip travels with its letter: move the whole chain by however far
-    // the root moved, without adding velocity.
+    // The drip travels with the bending letter: move the whole chain by
+    // however far its root moved, without adding velocity.
     const rootY = Math.min(s.tmp[1]!, w.floorY - nodeRadius(R, 0));
     const mx = s.tmp[0]! - s.px[base]!;
     const my = rootY - s.py[base]!;

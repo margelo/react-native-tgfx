@@ -1,4 +1,5 @@
 import { destroyMelt, stepMelt } from '../../typeMelt/melt';
+import { meltPoint } from '../../typeMelt/meshMelt';
 import {
   ANCHORS_PER_LETTER,
   BOTTOM_ANCHORS,
@@ -31,9 +32,12 @@ function lowestHead(s: SimState) {
   return y;
 }
 
-/** Where letter i's bottom edge is, given its slump. */
-const bottomOf = (s: SimState, i: number) =>
-  s.ly[i]! + (s.word.h[i]! / 2) * s.lsy[i]!;
+/** Where letter i's top-centre has got to in the melt. */
+const topOf = (s: SimState, i: number) => {
+  const out = new Float32Array(2);
+  meltPoint(s, i, 0, -s.word.h[i]! / 2, out);
+  return out[1]!;
+};
 
 test('at rest each letter drips from one anchor, like the reference', () => {
   const s = createState(fakeWord(), MODE_MELT);
@@ -71,17 +75,20 @@ test('once destroyed, the letters keep melting until nothing stands', () => {
   const s = createState(fakeWord(), MODE_MELT);
   destroyMelt(s, swipe);
   expect(s.phase).toBe(PHASE_DESTROYED);
-  let last = 1;
+  const last = new Float32Array(4);
   for (let t = 0; t < 30; t++) {
     run(s, 1);
-    for (let i = 0; i < 4; i++)
-      expect(s.lsy[i]!).toBeLessThanOrEqual(last + 1e-6);
-    last = Math.max(s.lsy[0]!, s.lsy[1]!, s.lsy[2]!, s.lsy[3]!);
+    for (let i = 0; i < 4; i++) {
+      expect(s.melted[i]!).toBeGreaterThanOrEqual(last[i]! - 1e-6);
+      last[i] = s.melted[i]!;
+    }
   }
   for (let i = 0; i < 4; i++) {
-    expect(s.lsy[i]!).toBeLessThan(0.02);
-    // Each letter has slumped all the way down onto the floor.
-    expect(bottomOf(s, i)).toBeCloseTo(s.word.floorY, 0);
+    expect(s.melted[i]!).toBeGreaterThan(0.999);
+    // Each letter's top has come all the way down into the puddle.
+    expect(topOf(s, i)).toBeGreaterThan(
+      s.word.floorY - 0.13 * s.word.h[i]! - 1,
+    );
   }
 });
 
@@ -134,7 +141,7 @@ test('a zero-speed swipe still melts and stays finite', () => {
   destroyMelt(s, { sx: 100, sy: 250, ex: 100, ey: 250, speed: 0 });
   run(s, 3);
   for (let k = 0; k < s.n; k++) expect(Number.isFinite(s.py[k]!)).toBe(true);
-  expect(s.lsy[0]!).toBeLessThan(1);
+  expect(s.melted[0]!).toBeGreaterThan(0);
 });
 
 test('rebuild from a full melt stands the letters back up and drains the puddle', () => {
@@ -147,9 +154,10 @@ test('rebuild from a full melt stands the letters back up and drains the puddle'
   expect(s.phase).toBe(PHASE_INTACT);
   expect(s.n).toBe(POOL_BASE);
   for (let a = 0; a < MAX_ANCHORS; a++) expect(s.stretch[a]).toBe(0);
+  expect(s.meltT).toBe(0);
   for (let i = 0; i < 4; i++) {
-    expect(s.lsy[i]).toBe(1);
-    expect(s.ly[i]).toBe(200);
+    expect(s.melted[i]).toBe(0);
+    expect(topOf(s, i)).toBeCloseTo(150);
   }
 });
 
@@ -160,10 +168,10 @@ test('a swipe during rebuild melts again', () => {
   s.phase = PHASE_REBUILDING;
   run(s, 0.5);
   destroyMelt(s, swipe);
-  const before = s.lsy[0]!;
+  const before = s.melted[0]!;
   run(s, 1);
   expect(s.phase).toBe(PHASE_DESTROYED);
-  expect(s.lsy[0]!).toBeLessThan(before);
+  expect(s.melted[0]!).toBeGreaterThan(before);
 });
 
 test('a swipe speeds the melt up, but only modestly', () => {
@@ -171,7 +179,7 @@ test('a swipe speeds the melt up, but only modestly', () => {
     const s = createState(fakeWord(), MODE_MELT);
     destroyMelt(s, { sx: 40, sy: 250, ex: 360, ey: 250, speed });
     let k = 0;
-    while (s.lsy[1]! > 0.5 && k++ < 6000) stepMelt(s, 1 / 60);
+    while (s.melted[1]! < 0.5 && k++ < 6000) stepMelt(s, 1 / 60);
     return k;
   };
   const ratio = timeToHalf(0) / timeToHalf(4000);

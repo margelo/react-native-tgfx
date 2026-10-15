@@ -14,6 +14,7 @@ import {
   sampleInside,
   topAnchors,
 } from './sampling';
+import { ROUND_EM } from './material';
 import {
   ANCHORS_PER_LETTER,
   BOTTOM_ANCHORS,
@@ -68,6 +69,7 @@ export function buildWord(width: number, height: number, seed = 7): Word {
   const w = new Float32Array(LETTERS);
   const h = new Float32Array(LETTERS);
   const circleR = new Float32Array(LETTERS);
+  const tube = new Float32Array(LETTERS * 4);
   const anchors = new Float32Array(LETTERS * ANCHORS_PER_LETTER * 2).fill(NaN);
   const circles = new Float32Array(LETTERS * CIRCLES_PER_LETTER * 2);
   const homes: number[] = [];
@@ -112,6 +114,18 @@ export function buildWord(width: number, height: number, seed = 7): Word {
     );
     // Condensed letters are tall and narrow: ten circles this size cover the outline.
     circleR[i] = Math.min(b.width, b.height) * 0.28;
+    // The tube image's rect, padded so the rounded, fattened letter fits; the
+    // mesh is laid over exactly this rect.
+    const pad = strokeWidths[i]! / 2 + fontSize * ROUND_EM * 3 + 2;
+    tube.set(
+      [
+        -b.width / 2 - pad,
+        -b.height / 2 - pad,
+        b.width + pad * 2,
+        b.height + pad * 2,
+      ],
+      i * 4,
+    );
   }
 
   const homeCount = Math.min(CAP, homes.length / 2);
@@ -131,6 +145,7 @@ export function buildWord(width: number, height: number, seed = 7): Word {
       anchors,
       circles,
       circleR,
+      tube,
       dropR: fontSize * 0.035,
       seed,
     },
