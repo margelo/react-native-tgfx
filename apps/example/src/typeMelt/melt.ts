@@ -226,8 +226,10 @@ export function stepMelt(s: SimState, dt: number): void {
     const footed = s.py[head]! >= w.floorY - s.r[head]! - 0.5;
     // A drip grows out of nothing: a dry anchor draws no blob on the letter.
     const grow = Math.min(1, s.stretch[a]! / (2 * R));
+    // Neighbouring nodes always overlap (r ≥ 0.6 × link), so a long strand
+    // stays one tube instead of reading as a chain of beads.
     for (let j = 0; j < CHAIN - 1; j++) {
-      s.r[base + j] = nodeRadius(R, j) * grow;
+      s.r[base + j] = Math.max(nodeRadius(R, j), link * 0.6) * grow;
     }
     s.r[head] = footed ? R * FOOT : nodeRadius(R, CHAIN - 1) * grow;
     if (footed) {

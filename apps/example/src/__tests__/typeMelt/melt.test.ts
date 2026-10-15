@@ -318,3 +318,25 @@ test('drips let go of drops that fall and land in the puddle', () => {
     expect(s.py[q]!).toBeCloseTo(s.word.floorY - s.r[q]! * 0.55, 1);
   }
 });
+
+test('a long strand stays one continuous tube: neighbouring nodes overlap', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+  run(s, 6);
+  let checked = 0;
+  for (let a = 0; a < MAX_ANCHORS; a++) {
+    const base = a * CHAIN;
+    if (s.stretch[a]! < 40) continue;
+    for (let j = 1; j < CHAIN - 1; j++) {
+      const d = Math.hypot(
+        s.px[base + j]! - s.px[base + j - 1]!,
+        s.py[base + j]! - s.py[base + j - 1]!,
+      );
+      expect(s.r[base + j]! + s.r[base + j - 1]!).toBeGreaterThanOrEqual(
+        d * 0.999,
+      );
+      checked++;
+    }
+  }
+  expect(checked).toBeGreaterThan(0);
+});
