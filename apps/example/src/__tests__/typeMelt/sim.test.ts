@@ -1,12 +1,14 @@
 import { SPRITE_FLOATS } from 'react-native-tgfx';
 import {
   BLOB,
+  CHAIN,
   MODE_EXPLODE,
   MODE_FALL,
   MODE_MELT,
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  POOL_BASE,
   createState,
 } from '../../typeMelt/state';
 import { MESH_VERTS, updateMelted } from '../../typeMelt/meshMelt';
@@ -156,16 +158,21 @@ describe('melt runs by itself', () => {
   });
 });
 
-test('publish hands the renderer only the sprites that are visible', () => {
+test('in melt mode a strand is drawn from every third node plus its head, a little larger', () => {
   const s = createState(fakeWord(), MODE_MELT);
-  for (let k = 0; k < 120; k++) step(s, 1 / 60);
-  let visible = 0;
-  for (let q = 0; q < s.n; q++) if (s.r[q]! > 0) visible++;
-  expect(visible).toBeLessThan(s.n);
+  for (let k = 0; k < 600; k++) step(s, 1 / 60);
+  let expected = 0;
+  for (let q = 0; q < s.n; q++) {
+    if (s.r[q]! <= 0) continue;
+    const j = q % CHAIN;
+    if (q >= POOL_BASE || j % 3 === 0 || j === CHAIN - 1) expected++;
+  }
   const f = new Float32Array(s.n * SPRITE_FLOATS);
   const count = { value: -1 };
   publish(s, f, meshes(), { value: 0 }, count, { value: 0 }, 0);
-  expect(Math.floor(count.value)).toBe(visible);
-  for (let q = 0; q < visible; q++)
-    expect(f[q * SPRITE_FLOATS + 4]!).toBeGreaterThan(0);
+  expect(Math.floor(count.value)).toBe(expected);
+  // The first sprite is a chain root (node 0), drawn 1.35× its radius.
+  let first = 0;
+  while (s.r[first]! <= 0) first++;
+  expect(f[4]).toBeCloseTo((s.r[first]! * 1.35) / (BLOB / 2));
 });

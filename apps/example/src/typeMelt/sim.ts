@@ -7,6 +7,7 @@ import { writeMesh } from './meshMelt';
 import { destroyMelt, stepMelt } from './melt';
 import {
   BLOB,
+  CHAIN,
   LETTERS,
   MAX_DT,
   MODE_EXPLODE,
@@ -14,6 +15,7 @@ import {
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  POOL_BASE,
   type Impulse,
   type SimState,
 } from './state';
@@ -105,6 +107,9 @@ export function setMode(s: SimState, mode: number): void {
   s.phase = PHASE_REBUILDING;
 }
 
+/** A thinned strand's sprites grow by this much so the strand stays continuous. */
+const STRAND_SCALE = 1.35;
+
 export function publish(
   s: SimState,
   f: Float32Array,
@@ -117,13 +122,25 @@ export function publish(
   'worklet';
   // Pack only visible sprites: parked chains on dry anchors are hundreds of
   // zero-size sprites the renderer would otherwise still walk every frame.
+  // In melt mode a strand is drawn from every third node plus its head, each
+  // a little larger: the blur joins them into one tube, and moving, stacked
+  // chain sprites were what held the drip phase under 60 fps.
+  const melting = s.mode === MODE_MELT;
   let live = 0;
   for (let i = 0; i < s.n; i++) {
     if (s.r[i]! <= 0) {
       continue;
     }
+    let scale = 1;
+    if (melting && i < POOL_BASE) {
+      const j = i % CHAIN;
+      if (j % 3 !== 0 && j !== CHAIN - 1) {
+        continue;
+      }
+      scale = STRAND_SCALE;
+    }
     const o = live * SPRITE_FLOATS;
-    f[o + 4] = s.r[i]! / (BLOB / 2);
+    f[o + 4] = (s.r[i]! * scale) / (BLOB / 2);
     f[o + 5] = s.px[i]!;
     f[o + 6] = s.py[i]!;
     live++;
