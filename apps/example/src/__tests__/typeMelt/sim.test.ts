@@ -155,3 +155,17 @@ describe('melt runs by itself', () => {
     expect(settle(s, () => s.phase === PHASE_DESTROYED, 5)).toBe(true);
   });
 });
+
+test('publish hands the renderer only the sprites that are visible', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  for (let k = 0; k < 120; k++) step(s, 1 / 60);
+  let visible = 0;
+  for (let q = 0; q < s.n; q++) if (s.r[q]! > 0) visible++;
+  expect(visible).toBeLessThan(s.n);
+  const f = new Float32Array(s.n * SPRITE_FLOATS);
+  const count = { value: -1 };
+  publish(s, f, meshes(), { value: 0 }, count, { value: 0 }, 0);
+  expect(Math.floor(count.value)).toBe(visible);
+  for (let q = 0; q < visible; q++)
+    expect(f[q * SPRITE_FLOATS + 4]!).toBeGreaterThan(0);
+});

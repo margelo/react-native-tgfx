@@ -115,11 +115,18 @@ export function publish(
   stamp: number,
 ): void {
   'worklet';
+  // Pack only visible sprites: parked chains on dry anchors are hundreds of
+  // zero-size sprites the renderer would otherwise still walk every frame.
+  let live = 0;
   for (let i = 0; i < s.n; i++) {
-    const o = i * SPRITE_FLOATS;
+    if (s.r[i]! <= 0) {
+      continue;
+    }
+    const o = live * SPRITE_FLOATS;
     f[o + 4] = s.r[i]! / (BLOB / 2);
     f[o + 5] = s.px[i]!;
     f[o + 6] = s.py[i]!;
+    live++;
   }
   // Every letter is a grid over its tube image: bent in melt mode, rigid otherwise.
   let melted = 0;
@@ -132,5 +139,5 @@ export function publish(
   melt.value = melted / LETTERS;
   // Reanimated drops same-value writes, so a constant count would never wake the
   // renderer after a buffer refill; the fraction truncates natively.
-  count.value = s.n + (stamp % 1000) * 1e-6;
+  count.value = live + (stamp % 1000) * 1e-6;
 }
