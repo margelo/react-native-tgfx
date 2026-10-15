@@ -15,6 +15,7 @@ uniform float3 uMetal;
 uniform float3 uBounce;
 uniform float uIrid;
 uniform float uMelt;
+uniform float uSparkle;
 
 float3 film(float t) {
   return 0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67)));
@@ -55,6 +56,13 @@ half4 main(float2 p) {
   col += (key * 0.85 + strip * 0.45) * env;
   float rim = smoothstep(0.55, 0.92, 1.0 - ndv);
   col += rim * (0.15 + 0.8 * tint) + spec * 1.6;
+  // Diamond fire: sparse glints on a 6 pt grid that twinkle with time.
+  float2 cell = floor(q / 6.0);
+  float2 inCell = fract(q / 6.0) - 0.5;
+  float rnd = fract(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+  float twinkle = pow(0.5 + 0.5 * sin(uTime * 3.0 + rnd * 40.0), 8.0);
+  float glint = step(0.94, rnd) * twinkle * smoothstep(0.3, 0.0, length(inCell));
+  col += uSparkle * glint * (1.2 + 0.8 * irid);
   // A faint glow in the finish's bounce colour, just outside the silhouette.
   float glow = smoothstep(0.0, uThreshold, h) * (1.0 - m);
   float3 halo = uBounce * 0.5 * glow;
@@ -90,6 +98,8 @@ interface Finish {
   bounce: Rgb;
   /** 0 = pure metal, 1 = soap-film iridescence. */
   irid: number;
+  /** Twinkling glints: 1 for diamond, 0 otherwise. */
+  sparkle: number;
 }
 
 /** Tuned offline against the reference with the numpy twin of the shader. */
@@ -99,30 +109,35 @@ export const FINISHES: Record<FinishName, Finish> = {
     metal: [1, 1, 1],
     bounce: [0.08, 0.42, 0.4],
     irid: 1,
+    sparkle: 0,
   },
   gold: {
     base: [0.07, 0.04, 0.01],
     metal: [1, 0.74, 0.3],
     bounce: [0.55, 0.32, 0.08],
     irid: 0.08,
+    sparkle: 0,
   },
   silver: {
     base: [0.05, 0.055, 0.065],
     metal: [0.86, 0.88, 0.92],
     bounce: [0.35, 0.42, 0.5],
     irid: 0.06,
+    sparkle: 0,
   },
   bronze: {
     base: [0.06, 0.03, 0.015],
     metal: [0.85, 0.48, 0.25],
     bounce: [0.45, 0.2, 0.1],
     irid: 0.08,
+    sparkle: 0,
   },
   diamond: {
     base: [0.14, 0.16, 0.2],
     metal: [0.9, 0.95, 1],
     bounce: [0.55, 0.75, 1],
     irid: 0.5,
+    sparkle: 1,
   },
 };
 
@@ -143,6 +158,7 @@ export function chromeUniforms(
     uMetal: f.metal,
     uBounce: f.bounce,
     uIrid: f.irid,
+    uSparkle: f.sparkle,
     // Height runs 0 → 1 over TUBE_EM, sampled ±1.5 pt: this makes the profile a true circle.
     uGain: (fontSize * TUBE_EM) / 3,
     uLight: [-0.4, -0.85] as [number, number],
