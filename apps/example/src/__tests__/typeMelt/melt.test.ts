@@ -244,7 +244,7 @@ test('a resting drip hangs from the bottom edge, not from under an arm', () => {
 test('once melting, liquid runs down from the top of every letter', () => {
   const s = createState(fakeWord(), MODE_MELT);
   destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
-  run(s, 3);
+  run(s, 5);
   for (let i = 0; i < 4; i++) {
     let run = 0;
     for (let k = 0; k < TOP_ANCHORS; k++) {
@@ -253,5 +253,29 @@ test('once melting, liquid runs down from the top of every letter', () => {
       run = Math.max(run, s.py[root + CHAIN - 1]! - s.py[root]!);
     }
     expect(run).toBeGreaterThan(20);
+  }
+});
+
+test('top streams start one by one, not all at once', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+  run(s, 0.3);
+  let started = 0;
+  let total = 0;
+  for (let i = 0; i < 4; i++) {
+    for (let k = 0; k < TOP_ANCHORS; k++) {
+      total++;
+      if (s.stretch[i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS + k]! > 0)
+        started++;
+    }
+  }
+  expect(started).toBeLessThan(total);
+  run(s, 2.5);
+  for (let i = 0; i < 4; i++) {
+    for (let k = 0; k < TOP_ANCHORS; k++) {
+      expect(
+        s.stretch[i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS + k]!,
+      ).toBeGreaterThan(0);
+    }
   }
 });

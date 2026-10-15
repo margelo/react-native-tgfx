@@ -4,6 +4,7 @@
 // lands feed a puddle that spreads as it grows.
 import {
   ANCHORS_PER_LETTER,
+  BOTTOM_ANCHORS,
   CHAIN,
   GRAVITY,
   LETTERS,
@@ -38,6 +39,14 @@ const BOOST_DECAY = 0.4;
 
 export function destroyMelt(s: SimState, imp: Impulse): void {
   'worklet';
+  if (s.phase !== PHASE_DESTROYED) {
+    // Liquid gathers along the top edges and starts running one stream at a
+    // time; the bottom drips are already hanging, so they go at once.
+    for (let a = 0; a < MAX_ANCHORS; a++) {
+      const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
+      s.wait[a] = top ? 0.2 + 1.8 * nextRand(s) : 0;
+    }
+  }
   s.phase = PHASE_DESTROYED;
   const w = s.word;
   const reach = 1.5 * w.fontSize;
@@ -142,9 +151,13 @@ export function stepMelt(s: SimState, dt: number): void {
       s.stretch[a] = Math.max(0, s.stretch[a]! - (40 + s.stretch[a]! * 3) * dt);
     } else {
       const limit = destroyed ? gap * 1.2 : gap * s.reach[a]!;
+      if (destroyed && s.wait[a]! > 0) {
+        s.wait[a] = s.wait[a]! - dt;
+      }
+      const running = !destroyed || s.wait[a]! <= 0;
       s.stretch[a] = Math.min(
         limit,
-        s.stretch[a]! + s.rate[a]! * (1 + s.boost[a]! * 2) * dt,
+        s.stretch[a]! + (running ? s.rate[a]! * (1 + s.boost[a]! * 2) * dt : 0),
       );
     }
     s.boost[a] = s.boost[a]! * Math.exp(-BOOST_DECAY * dt);
