@@ -12,8 +12,8 @@ export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 10;
 /** Control columns across each letter, each melting on its own schedule. */
 export const MELT_COLS = 8;
-/** Seconds one column takes to melt once it starts. */
-export const MELT_DURATION = 11;
+/** Seconds one column takes to melt once it starts: real melting is slow. */
+export const MELT_DURATION = 18;
 /** Melt's puddle lives after the drip chains in the sprite buffer. */
 export const POOL_BASE = MAX_ANCHORS * CHAIN;
 export const POOL_CAP = 400;
@@ -342,7 +342,8 @@ export function createState(word: WordData, mode: number): SimState {
     }
     for (let c = 0; c < MELT_COLS; c++) {
       const n = hi > lo ? (s.tmpCols[c]! - lo) / (hi - lo) : 0.5;
-      s.cstart[o + c] = 0.3 + i * 0.5 + 1.2 * n;
+      // Letters give way about 2 s apart; columns within a letter, up to 2 s.
+      s.cstart[o + c] = 0.6 + i * 2.2 + 2.0 * n;
       s.meltEnd = Math.max(s.meltEnd, s.cstart[o + c]! + MELT_DURATION);
       // A real puddle is uneven: thicker in some places than others.
       s.cdepth[o + c] = 0.5 + nextRand(s);

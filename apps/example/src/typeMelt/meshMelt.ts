@@ -27,7 +27,9 @@ const BASE_SPREAD = 1.4;
 function progressAt(s: SimState, k: number): number {
   'worklet';
   const x = Math.max(0, Math.min(1, (s.meltT - s.cstart[k]!) / MELT_DURATION));
-  return x * x * (3 - 2 * x);
+  // Slow to start, faster as it weakens: a letter holds its shape for a while
+  // before it gives way, rather than sinking at an even rate.
+  return Math.pow(x * x * (3 - 2 * x), 1.6);
 }
 
 /** Fractional control-column index of letter-local x: they span 1.6× the letter. */

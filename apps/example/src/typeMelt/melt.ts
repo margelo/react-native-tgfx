@@ -22,8 +22,8 @@ import {
   type SimState,
 } from './state';
 
-/** Rebuilding rewinds the melt clock this many times faster than it ran. */
-const REWIND = 6;
+/** A rebuild rewinds a full melt in this many seconds, however long the melt took. */
+const REBUILD_SECONDS = 2.5;
 /** Puddle drops one whole letter's volume makes. */
 const DROPS_PER_LETTER = 14;
 /** A drip head resting on the floor, in drip radii. */
@@ -99,7 +99,7 @@ export function stepMelt(s: SimState, dt: number): void {
       s.meltT + dt * (1 + Math.min(boost / 4, 1) * 0.8),
     );
   } else if (rebuilding) {
-    s.meltT = Math.max(0, s.meltT - dt * REWIND);
+    s.meltT = Math.max(0, s.meltT - (dt * s.meltEnd) / REBUILD_SECONDS);
   }
   for (let i = 0; i < LETTERS; i++) {
     s.tmpCols[i] = s.melted[i]!;

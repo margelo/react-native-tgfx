@@ -3,6 +3,7 @@ import {
   MESH_ROWS,
   MESH_VERTS,
   columnProgress,
+  updateMelted,
   gridIndices,
   gridTextures,
   meltPoint,
@@ -17,6 +18,11 @@ import {
 import { fakeWord } from '../../__fixtures__/typeMelt/fakeWord';
 
 const out = new Float32Array(2);
+/** Puts the melt clock a fraction of the way through a full melt. */
+const meltAt = (s: SimState, f: number) => {
+  s.meltT = s.meltEnd * f;
+  updateMelted(s);
+};
 const at = (s: SimState, i: number, ax: number, ay: number) => {
   meltPoint(s, i, ax, ay, out);
   return [out[0]!, out[1]!];
@@ -32,7 +38,7 @@ test('an unmelted letter maps every point to its resting place', () => {
 
 test('tops melt before bottoms', () => {
   const s = createState(fakeWord(), MODE_MELT);
-  s.meltT = 8;
+  meltAt(s, 0.55);
   const top = at(s, 0, 0, -50)[1]! - 150;
   const bottom = at(s, 0, 0, 50)[1]! - 250;
   expect(top).toBeGreaterThan(bottom * 1.5 + 5);
@@ -40,7 +46,7 @@ test('tops melt before bottoms', () => {
 
 test('columns melt on their own schedules, so the top edge goes uneven', () => {
   const s = createState(fakeWord(), MODE_MELT);
-  s.meltT = 7;
+  meltAt(s, 0.45);
   let lo = Infinity;
   let hi = -Infinity;
   for (let ax = -28; ax <= 28; ax += 4) {
@@ -76,7 +82,7 @@ test('a fully melted letter lies in a puddle on the floor, wider than it stood',
 
 test('the base spreads wider than the top', () => {
   const s = createState(fakeWord(), MODE_MELT);
-  s.meltT = 9;
+  meltAt(s, 0.7);
   const width = (ay: number) => at(s, 1, 30, ay)[0]! - at(s, 1, -30, ay)[0]!;
   expect(width(50)).toBeGreaterThan(width(-50) + 2);
 });
@@ -97,7 +103,7 @@ test('writeMesh follows the melt in melt mode', () => {
   const s = createState(fakeWord(), MODE_MELT);
   const rest = new Float32Array(MESH_VERTS * 2);
   writeMesh(s, 0, rest);
-  s.meltT = 8;
+  meltAt(s, 0.55);
   const melting = new Float32Array(MESH_VERTS * 2);
   writeMesh(s, 0, melting);
   // The top-centre vertex has sunk.
@@ -132,4 +138,27 @@ test('the puddle is uneven: its depth varies from column to column', () => {
     hi = Math.max(hi, top);
   }
   expect(hi - lo).toBeGreaterThan(3);
+});
+
+test('the word holds its shape at first: 4 s in, every letter still stands', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  s.meltT = 4;
+  updateMelted(s);
+  for (let i = 0; i < 4; i++) expect(s.melted[i]!).toBeLessThan(0.12);
+});
+
+test('letters give way at clearly different times', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  let widest = 0;
+  for (let f = 0.1; f < 1; f += 0.05) {
+    meltAt(s, f);
+    widest = Math.max(widest, Math.max(...s.melted) - Math.min(...s.melted));
+  }
+  expect(widest).toBeGreaterThan(0.35);
+});
+
+test('a full melt takes a while: 20 to 35 seconds', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  expect(s.meltEnd).toBeGreaterThan(20);
+  expect(s.meltEnd).toBeLessThan(35);
 });
