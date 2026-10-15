@@ -4,7 +4,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   makeMutable,
-  useDerivedValue,
   useFrameCallback,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -19,7 +18,7 @@ import {
   useSpriteBuffer,
 } from 'react-native-tgfx';
 import { buildHeightImages, type HeightImage } from './heightImages';
-import { softBlurPx, type FinishName } from './material';
+import { type FinishName } from './material';
 import { BlobSprite, LiquidScene } from './LiquidScene';
 import {
   destroy,
@@ -91,9 +90,6 @@ export function TypeMeltScreen() {
   const letterOpacity = useSharedValue(1);
   const count = useSharedValue(0);
   const melt = useSharedValue(0);
-  const fontSize = word?.data.fontSize ?? 0;
-  const scale = PixelRatio.get();
-  const blur = useDerivedValue(() => softBlurPx(fontSize, scale, melt.value));
   const sprites = useSpriteBuffer(CAP);
   const time = useClock();
   const blob = useOffscreenImage(
@@ -273,7 +269,7 @@ export function TypeMeltScreen() {
                 sprites={sprites}
                 count={count}
                 time={time}
-                blur={blur}
+                melt={melt}
                 finish={finish}
               />
             </Canvas>

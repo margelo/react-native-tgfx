@@ -14,6 +14,7 @@ uniform float3 uBase;
 uniform float3 uMetal;
 uniform float3 uBounce;
 uniform float uIrid;
+uniform float uMelt;
 
 float3 film(float t) {
   return 0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67)));
@@ -25,7 +26,10 @@ half4 main(float2 p) {
   float d = 1.5 * uScale;
   float gx = content.eval(p + float2(d, 0.0)).a - content.eval(p - float2(d, 0.0)).a;
   float gy = content.eval(p + float2(0.0, d)).a - content.eval(p - float2(0.0, d)).a;
-  float3 n = normalize(float3(-gx * uGain, -gy * uGain, 1.0));
+  // Melting letters flatten into goo: the slope reads gentler as the melt
+  // goes on (a growing blur did this at a cost of 9 fps).
+  float gain = uGain * (1.0 - 0.45 * uMelt);
+  float3 n = normalize(float3(-gx * gain, -gy * gain, 1.0));
   float ndv = n.z;
   float2 q = p / uScale;
   float swirl = sin(q.x * 0.045 + q.y * 0.02 + uTime * 0.6) * sin(q.y * 0.05 - q.x * 0.015 - uTime * 0.45)
@@ -64,17 +68,9 @@ export const TUBE_EM = 0.16;
 export const ROUND_EM = 0.014;
 /** Blur that fillets letters and droplets together on screen, in font sizes. */
 export const SOFT_EM = 0.012;
-/** Extra blur at a full melt, so slumping letters soften into goo, in font sizes. */
-export const MELT_SOFT_EM = 0.03;
-
-/** The fillet blur's sigma in drawing pixels (what tgfx's `<Blur>` takes), for a melt of 0..1. */
-export function softBlurPx(
-  fontSize: number,
-  scale: number,
-  melt: number,
-): number {
-  'worklet';
-  return fontSize * (SOFT_EM + MELT_SOFT_EM * melt) * scale;
+/** The fillet blur's sigma in drawing pixels (what tgfx's `<Blur>` takes). */
+export function softBlurPx(fontSize: number, scale: number): number {
+  return fontSize * SOFT_EM * scale;
 }
 
 export type FinishName =

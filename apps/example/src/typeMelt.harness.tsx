@@ -10,7 +10,6 @@ import {
 } from 'react-native-tgfx';
 import { buildHeightImages, type HeightImage } from './typeMelt/heightImages';
 import { BlobSprite, LiquidScene } from './typeMelt/LiquidScene';
-import { softBlurPx } from './typeMelt/material';
 import type { LetterValues } from './typeMelt/sim';
 import {
   ANCHORS_PER_LETTER,
@@ -147,7 +146,7 @@ describe('TypeMelt material', () => {
         sprites={sprites}
         count={0}
         time={0}
-        blur={softBlurPx(word.data.fontSize, PixelRatio.get(), 0)}
+        melt={0}
         reflection={reflection}
       />
     );

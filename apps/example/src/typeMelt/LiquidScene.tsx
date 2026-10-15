@@ -2,6 +2,7 @@ import React from 'react';
 import { PixelRatio } from 'react-native';
 import {
   Atlas,
+  BlendColor,
   Blur,
   Circle,
   Fill,
@@ -17,6 +18,7 @@ import type { HeightImage } from './heightImages';
 import {
   CHROME_SOURCE,
   chromeUniforms,
+  FINISHES,
   softBlurPx,
   type FinishName,
 } from './material';
@@ -34,8 +36,8 @@ export interface LiquidSceneProps {
   sprites: SpriteBuffer;
   count: Value | number;
   time: Value | number;
-  /** Fillet blur sigma in drawing pixels; grows as the letters melt (see `softBlurPx`). */
-  blur: Value | number;
+  /** How melted the word is, 0..1: the shader softens the surface as it grows. */
+  melt: Value | number;
   /** Defaults to the reference's iridescent glass. */
   finish?: FinishName;
   reflection?: boolean;
@@ -64,18 +66,47 @@ export function BlobSprite() {
   );
 }
 
-function Liquid({
-  word,
+/** The height field itself: tube letters and sphere droplets, white with alpha = height. */
+function HeightField({
   heights,
   letters,
   letterOpacity,
   blob,
   sprites,
   count,
-  time,
-  blur,
-  finish,
 }: LiquidSceneProps) {
+  return (
+    <>
+      <Group opacity={letterOpacity}>
+        {heights?.map((tube, i) => (
+          <Group
+            key={i}
+            transform={[
+              { translateX: letters[i]!.x },
+              { translateY: letters[i]!.y },
+              { rotate: letters[i]!.rot },
+              { scaleX: letters[i]!.sx },
+              { scaleY: letters[i]!.sy },
+            ]}
+          >
+            <TgfxImage
+              image={tube.image}
+              x={tube.x}
+              y={tube.y}
+              width={tube.width}
+              height={tube.height}
+              fit="fill"
+            />
+          </Group>
+        ))}
+      </Group>
+      {blob && <Atlas image={blob} buffer={sprites} count={count} />}
+    </>
+  );
+}
+
+function Liquid(props: LiquidSceneProps) {
+  const { word, time, melt, finish } = props;
   const scale = PixelRatio.get();
   const { fontSize } = word.data;
   return (
@@ -84,40 +115,30 @@ function Liquid({
       <RuntimeShader
         source={CHROME_SOURCE}
         inputName="content"
-        uniforms={{ ...chromeUniforms(scale, fontSize, finish), uTime: time }}
+        uniforms={{
+          ...chromeUniforms(scale, fontSize, finish),
+          uTime: time,
+          uMelt: melt,
+        }}
         sampleRadiusPx={Math.ceil(1.5 * scale) + 1}
       />
       <Group>
         {/* Pass 1: the height field — tube letters and sphere droplets,
             lightly blurred so they fillet where they meet. */}
-        <Blur blur={blur} />
-        <Group opacity={letterOpacity}>
-          {heights?.map((tube, i) => (
-            <Group
-              key={i}
-              transform={[
-                { translateX: letters[i]!.x },
-                { translateY: letters[i]!.y },
-                { rotate: letters[i]!.rot },
-                { scaleX: letters[i]!.sx },
-                { scaleY: letters[i]!.sy },
-              ]}
-            >
-              <TgfxImage
-                image={tube.image}
-                x={tube.x}
-                y={tube.y}
-                width={tube.width}
-                height={tube.height}
-                fit="fill"
-              />
-            </Group>
-          ))}
-        </Group>
-        {blob && <Atlas image={blob} buffer={sprites} count={count} />}
+        <Blur blur={softBlurPx(fontSize, scale)} />
+        <HeightField {...props} />
       </Group>
     </Group>
   );
+}
+
+function bounceHex(finish: FinishName = 'iridescent'): string {
+  const hex = (c: number) =>
+    Math.round(Math.min(1, c) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  const [r, g, b] = FINISHES[finish].bounce;
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 
 export function LiquidScene(props: LiquidSceneProps) {
@@ -127,16 +148,15 @@ export function LiquidScene(props: LiquidSceneProps) {
       <Fill color="black" />
       {props.reflection !== false && (
         <>
+          {/* The reflection is the bare height field, tinted and faint: the
+              full blur-and-shade pipeline a second time halved the frame
+              rate for a detail drawn at a fraction of the brightness. */}
           <Group
             transform={[{ translateY: 2 * floorY }, { scaleY: -1 }]}
-            opacity={0.3}
+            opacity={0.08}
           >
-            {/* The faint reflection keeps the resting blur: a growing blur
-                costs the full price twice for a detail nobody sees. */}
-            <Liquid
-              {...props}
-              blur={softBlurPx(props.word.data.fontSize, PixelRatio.get(), 0)}
-            />
+            <BlendColor color={bounceHex(props.finish)} mode="srcIn" />
+            <HeightField {...props} />
           </Group>
           <Rect x={0} y={floorY} width={width} height={height - floorY}>
             <LinearGradient
