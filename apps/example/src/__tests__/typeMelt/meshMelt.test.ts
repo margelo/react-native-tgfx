@@ -162,3 +162,26 @@ test('a full melt takes a while: 20 to 35 seconds', () => {
   expect(s.meltEnd).toBeGreaterThan(20);
   expect(s.meltEnd).toBeLessThan(35);
 });
+
+test('writeMesh places every vertex exactly where meltPoint puts it', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  for (const f of [0, 0.3, 0.6, 1]) {
+    meltAt(s, f);
+    const m = new Float32Array(MESH_VERTS * 2);
+    writeMesh(s, 1, m);
+    const [tx, ty, tw, th] = [-35, -55, 70, 110];
+    for (let r = 0; r < MESH_ROWS; r++) {
+      for (let c = 0; c < MESH_COLS; c++) {
+        const [x, y] = at(
+          s,
+          1,
+          tx + (c / (MESH_COLS - 1)) * tw,
+          ty + (r / (MESH_ROWS - 1)) * th,
+        );
+        const o = (r * MESH_COLS + c) * 2;
+        expect(m[o]).toBeCloseTo(x!, 3);
+        expect(m[o + 1]).toBeCloseTo(y!, 3);
+      }
+    }
+  }
+});

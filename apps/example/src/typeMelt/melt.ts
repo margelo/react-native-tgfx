@@ -159,6 +159,18 @@ export function stepMelt(s: SimState, dt: number): void {
     }
     s.boost[a] = s.boost[a]! * Math.exp(-BOOST_DECAY * dt);
     settled = settled && s.stretch[a] === 0;
+    if (s.stretch[a] === 0) {
+      // A dry anchor draws nothing: park its chain on the root and skip the physics.
+      const rx = s.tmp[0]!;
+      const ry = Math.min(s.tmp[1]!, w.floorY - nodeRadius(R, 0));
+      for (let j = 0; j < CHAIN; j++) {
+        const k = base + j;
+        s.px[k] = s.ox[k] = rx;
+        s.py[k] = s.oy[k] = ry;
+        s.r[k] = 0;
+      }
+      continue;
+    }
     const link = s.stretch[a]! / (CHAIN - 1);
     // The drip travels with the bending letter: move the whole chain by
     // however far its root moved, without adding velocity.

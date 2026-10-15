@@ -9,7 +9,7 @@ import {
   MELT_COLS,
   MELT_DURATION,
   MODE_MELT,
-  letterPoint,
+  SPREAD,
   type SimState,
 } from './state';
 
@@ -98,31 +98,65 @@ export function meltPoint(
   out[1] = base - f * height;
 }
 
-/** Writes letter i's grid positions: melting in melt mode, rigid otherwise. */
+/**
+ * Writes letter i's grid positions: melting in melt mode, rigid otherwise.
+ * The same maths as `meltPoint` with everything that only varies per column
+ * hoisted out of the vertex loop: this runs on the UI thread every frame, and
+ * per-vertex column work was what held the melt under 60 fps.
+ */
 export function writeMesh(
   s: SimState,
   i: number,
   positions: Float32Array,
 ): void {
   'worklet';
-  const t = s.word.tube;
+  const w = s.word;
+  const t = w.tube;
   const tx = t[i * 4]!;
   const ty = t[i * 4 + 1]!;
   const tw = t[i * 4 + 2]!;
   const th = t[i * 4 + 3]!;
-  const melt = s.mode === MODE_MELT;
-  for (let r = 0; r < MESH_ROWS; r++) {
-    const ay = ty + (r / (MESH_ROWS - 1)) * th;
-    for (let c = 0; c < MESH_COLS; c++) {
-      const ax = tx + (c / (MESH_COLS - 1)) * tw;
-      if (melt) {
-        meltPoint(s, i, ax, ay, s.tmp);
-      } else {
-        letterPoint(s, i, ax, ay, s.tmp);
+  if (s.mode !== MODE_MELT) {
+    s.meshT[i] = NaN;
+    const c = Math.cos(s.la[i]!);
+    const n = Math.sin(s.la[i]!);
+    const sx = 1 + SPREAD * (1 - s.lsy[i]!);
+    const sy = s.lsy[i]!;
+    for (let r = 0; r < MESH_ROWS; r++) {
+      const y = (ty + (r / (MESH_ROWS - 1)) * th) * sy;
+      for (let k = 0; k < MESH_COLS; k++) {
+        const x = (tx + (k / (MESH_COLS - 1)) * tw) * sx;
+        const o = (r * MESH_COLS + k) * 2;
+        positions[o] = s.lx[i]! + x * c - y * n;
+        positions[o + 1] = s.ly[i]! + x * n + y * c;
       }
-      const o = (r * MESH_COLS + c) * 2;
-      positions[o] = s.tmp[0]!;
-      positions[o + 1] = s.tmp[1]!;
+    }
+    return;
+  }
+  // A melt mesh only moves when the melt clock does.
+  if (s.meshT[i] === s.meltT) {
+    return;
+  }
+  s.meshT[i] = s.meltT;
+  const h = w.h[i]!;
+  const cx = w.cx[i]!;
+  const bottom = w.cy[i]! + h / 2;
+  for (let k = 0; k < MESH_COLS; k++) {
+    const ax = tx + (k / (MESH_COLS - 1)) * tw;
+    const p = columnProgress(s, i, ax);
+    const base = bottom + (w.floorY - bottom) * p;
+    const depth = PUDDLE_DEPTH * columnDepth(s, i, ax);
+    const height = Math.max(h * Math.pow(1 - p, 1.2), h * depth * p);
+    const power = 1 + 1.2 * p;
+    const spread = BASE_SPREAD * p;
+    for (let r = 0; r < MESH_ROWS; r++) {
+      const ay = ty + (r / (MESH_ROWS - 1)) * th;
+      const frac = (h / 2 - ay) / h;
+      const f = frac <= 0 ? frac : Math.pow(frac, power);
+      const low = 1 - Math.max(0, Math.min(1, f));
+      const o = (r * MESH_COLS + k) * 2;
+      positions[o] = cx + ax * (1 + spread * low * low);
+      positions[o + 1] = base - f * height;
     }
   }
 }
