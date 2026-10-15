@@ -146,7 +146,7 @@ describe('melt runs by itself', () => {
   test('after melting completely it holds, rebuilds, then melts again', () => {
     const s = createState(fakeWord(), MODE_MELT);
     const flat = () =>
-      s.phase === PHASE_DESTROYED && Array.from(s.melted).every(v => v > 0.999);
+      s.phase === PHASE_DESTROYED && Array.from(s.melted).every(v => v >= 0.97);
     expect(settle(s, flat, 40)).toBe(true);
     // It holds the puddle for a moment rather than snapping straight back.
     for (let k = 0; k < 60; k++) step(s, 1 / 60);

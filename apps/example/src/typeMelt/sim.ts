@@ -41,7 +41,8 @@ function autoMelt(s: SimState, dt: number): void {
     return;
   }
   for (let i = 0; i < LETTERS; i++) {
-    if (s.melted[i]! < 0.999) {
+    // 97%: the last few column tails are invisible, waiting for them dragged.
+    if (s.melted[i]! < 0.97) {
       s.flatT = 0;
       return;
     }
