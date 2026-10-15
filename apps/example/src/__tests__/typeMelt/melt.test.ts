@@ -340,3 +340,22 @@ test('a long strand stays one continuous tube: neighbouring nodes overlap', () =
   }
   expect(checked).toBeGreaterThan(0);
 });
+
+test('top streams stay short runs, never longer than a third of the letter', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+  let longest = 0;
+  for (let k = 0; k < 60 * 15; k++) {
+    stepMelt(s, 1 / 60);
+    for (let i = 0; i < 4; i++) {
+      for (let t = 0; t < TOP_ANCHORS; t++) {
+        longest = Math.max(
+          longest,
+          s.stretch[i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS + t]!,
+        );
+      }
+    }
+  }
+  expect(longest).toBeGreaterThan(10);
+  expect(longest).toBeLessThanOrEqual(0.35 * 100 + 1e-3);
+});

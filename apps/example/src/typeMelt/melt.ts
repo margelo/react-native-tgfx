@@ -26,6 +26,8 @@ import {
 const REBUILD_SECONDS = 2.5;
 /** Puddle drops one whole letter's volume makes. */
 const DROPS_PER_LETTER = 14;
+/** A top stream's longest run, as a share of its letter's height. */
+const TOP_RUN = 0.35;
 /** A drip head resting on the floor, in drip radii. */
 const FOOT = 1.5;
 /** The largest a puddle drop grows, in drip radii. */
@@ -147,7 +149,17 @@ export function stepMelt(s: SimState, dt: number): void {
       // anchor at once made a wall of strands under the word.
       const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
       const wet = top || s.reach[a]! > 0;
-      const limit = destroyed ? (wet ? gap * 1.2 : 0) : gap * s.reach[a]!;
+      // Top streams are short runs at the edge: liquid gathers, swells and
+      // drips, while the melting letter carries it down. Full-height streams
+      // looked like zips down the letters.
+      const run = top
+        ? TOP_RUN * w.h[(a / ANCHORS_PER_LETTER) | 0]!
+        : gap * 1.2;
+      const limit = destroyed
+        ? wet
+          ? Math.min(gap * 1.2, run)
+          : 0
+        : gap * s.reach[a]!;
       if (destroyed && s.wait[a]! > 0) {
         s.wait[a] = s.wait[a]! - dt;
       }
@@ -237,7 +249,11 @@ export function stepMelt(s: SimState, dt: number): void {
     }
     // Spilling: a long drip that hasn't reached the floor swells and lets go
     // of a drop now and then, then pulls back up and builds the next one.
-    if (destroyed && !footed && s.stretch[a]! > gap * 0.4) {
+    const isTop = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
+    const swollen = isTop
+      ? s.stretch[a]! >= TOP_RUN * w.h[(a / ANCHORS_PER_LETTER) | 0]! * 0.95
+      : s.stretch[a]! > gap * 0.4;
+    if (destroyed && !footed && swollen) {
       s.dropT[a] = s.dropT[a]! - dt;
       if (s.dropT[a]! <= 0) {
         spawnPool(s, s.px[head]!, R, s.py[head]!);
