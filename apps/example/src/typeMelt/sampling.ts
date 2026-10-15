@@ -66,6 +66,29 @@ export function bottomAnchors(
   return out;
 }
 
+/**
+ * Splits the box into `count` columns and, for each, scans down from the box's
+ * top edge for the first inside point — where liquid gathers and starts to run.
+ */
+export function topAnchors(
+  contains: Contains,
+  box: Box,
+  count: number,
+  step: number,
+): number[] {
+  const out: number[] = [];
+  for (let c = 0; c < count; c++) {
+    const x = box.x + ((c + 0.5) * box.width) / count;
+    for (let y = box.y; y <= box.y + box.height; y += step) {
+      if (contains(x, y)) {
+        out.push(x, y);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /** Farthest-point sampling: `k` points spread across the input, as x/y pairs. */
 export function pickSpread(points: number[], k: number): number[] {
   const n = points.length / 2;

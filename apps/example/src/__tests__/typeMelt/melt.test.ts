@@ -1,6 +1,7 @@
 import { destroyMelt, stepMelt } from '../../typeMelt/melt';
 import {
   ANCHORS_PER_LETTER,
+  BOTTOM_ANCHORS,
   CHAIN,
   MAX_ANCHORS,
   MODE_MELT,
@@ -8,6 +9,7 @@ import {
   PHASE_INTACT,
   PHASE_REBUILDING,
   POOL_BASE,
+  TOP_ANCHORS,
   createState,
   type SimState,
 } from '../../typeMelt/state';
@@ -237,4 +239,19 @@ test('a resting drip hangs from the bottom edge, not from under an arm', () => {
   expect(s.reach[0]).toBe(0);
   expect(s.reach[1]).toBe(0);
   expect(s.reach[3]).toBe(0);
+});
+
+test('once melting, liquid runs down from the top of every letter', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+  run(s, 3);
+  for (let i = 0; i < 4; i++) {
+    let run = 0;
+    for (let k = 0; k < TOP_ANCHORS; k++) {
+      const a = i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS + k;
+      const root = a * CHAIN;
+      run = Math.max(run, s.py[root + CHAIN - 1]! - s.py[root]!);
+    }
+    expect(run).toBeGreaterThan(20);
+  }
 });

@@ -276,7 +276,11 @@ export function TypeMeltScreen() {
           )}
         </View>
       </GestureDetector>
-      <Text style={styles.hint}>Swipe to destroy · double-tap to rebuild</Text>
+      <Text style={styles.hint}>
+        {mode === MODE_MELT
+          ? 'Watch it melt · double-tap to rebuild'
+          : 'Swipe to destroy · double-tap to rebuild'}
+      </Text>
     </View>
   );
 }

@@ -12,9 +12,12 @@ import {
   mulberry32,
   pickSpread,
   sampleInside,
+  topAnchors,
 } from './sampling';
 import {
   ANCHORS_PER_LETTER,
+  BOTTOM_ANCHORS,
+  TOP_ANCHORS,
   CAP,
   CIRCLES_PER_LETTER,
   LETTERS,
@@ -96,8 +99,12 @@ export function buildWord(width: number, height: number, seed = 7): Word {
       homes.push(cx[i]! + pts[k]!, cy[i]! + pts[k + 1]!);
     }
     anchors.set(
-      bottomAnchors(contains, box, ANCHORS_PER_LETTER, spacing * 0.5),
+      bottomAnchors(contains, box, BOTTOM_ANCHORS, spacing * 0.5),
       i * ANCHORS_PER_LETTER * 2,
+    );
+    anchors.set(
+      topAnchors(contains, box, TOP_ANCHORS, spacing * 0.5),
+      (i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS) * 2,
     );
     circles.set(
       pickSpread(pts, CIRCLES_PER_LETTER),

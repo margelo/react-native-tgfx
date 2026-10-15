@@ -1,11 +1,14 @@
 import {
   bottomAnchors,
+  topAnchors,
   mulberry32,
   pickSpread,
   sampleInside,
 } from '../../typeMelt/sampling';
 import {
   ANCHORS_PER_LETTER,
+  BOTTOM_ANCHORS,
+  TOP_ANCHORS,
   CIRCLES_PER_LETTER,
   LETTERS,
   type WordData,
@@ -30,8 +33,12 @@ export function fakeWord(): WordData {
       homes.push(cx[i]! + pts[k]!, cy[i]! + pts[k + 1]!);
     }
     anchors.set(
-      bottomAnchors(contains, box, ANCHORS_PER_LETTER, 1),
+      bottomAnchors(contains, box, BOTTOM_ANCHORS, 1),
       i * ANCHORS_PER_LETTER * 2,
+    );
+    anchors.set(
+      topAnchors(contains, box, TOP_ANCHORS, 1),
+      (i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS) * 2,
     );
     circles.set(
       pickSpread(pts, CIRCLES_PER_LETTER),

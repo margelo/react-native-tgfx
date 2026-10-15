@@ -59,7 +59,8 @@ test('switching mode mid-destroy finishes the old rebuild first, and ignores swi
   setMode(s, MODE_MELT);
   destroy(s, swipe); // ignored: a switch is pending
   expect(s.phase).toBe(PHASE_REBUILDING);
-  for (let k = 0; k < 300; k++) step(s, 1 / 60);
+  // Stop the moment the switch lands: melt mode starts melting by itself soon after.
+  for (let k = 0; k < 300 && s.mode !== MODE_MELT; k++) step(s, 1 / 60);
   expect(s.mode).toBe(MODE_MELT);
   expect(s.phase).toBe(PHASE_INTACT);
   expect(s.letterOpacity).toBe(1);
@@ -127,4 +128,46 @@ test('publish widens a slumping letter as it flattens', () => {
   expect(letters[0]!.sx.value).toBe(1);
   // How melted the word is overall: the mean of (1 - lsy).
   expect(melt.value).toBeCloseTo(0.75 / 4);
+});
+
+describe('melt runs by itself', () => {
+  const settle = (
+    s: ReturnType<typeof createState>,
+    until: () => boolean,
+    seconds: number,
+  ) => {
+    for (let k = 0; k < seconds * 60 && !until(); k++) step(s, 1 / 60);
+    return until();
+  };
+
+  test('melt mode starts melting on its own', () => {
+    const s = createState(fakeWord(), MODE_MELT);
+    for (let k = 0; k < 180; k++) step(s, 1 / 60);
+    expect(s.phase).toBe(PHASE_DESTROYED);
+  });
+
+  test('a swipe does nothing in melt mode', () => {
+    const s = createState(fakeWord(), MODE_MELT);
+    destroy(s, swipe);
+    expect(s.phase).toBe(PHASE_INTACT);
+  });
+
+  test('with auto-melt off the word stays at rest', () => {
+    const s = createState(fakeWord(), MODE_MELT);
+    s.autoMelt = false;
+    for (let k = 0; k < 600; k++) step(s, 1 / 60);
+    expect(s.phase).toBe(PHASE_INTACT);
+  });
+
+  test('after melting completely it holds, rebuilds, then melts again', () => {
+    const s = createState(fakeWord(), MODE_MELT);
+    const flat = () =>
+      s.phase === PHASE_DESTROYED && Array.from(s.lsy).every(v => v === 0);
+    expect(settle(s, flat, 40)).toBe(true);
+    // It holds the puddle for a moment rather than snapping straight back.
+    for (let k = 0; k < 60; k++) step(s, 1 / 60);
+    expect(s.phase).toBe(PHASE_DESTROYED);
+    expect(settle(s, () => s.phase === PHASE_INTACT, 10)).toBe(true);
+    expect(settle(s, () => s.phase === PHASE_DESTROYED, 5)).toBe(true);
+  });
 });

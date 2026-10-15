@@ -1,5 +1,6 @@
 import {
   bottomAnchors,
+  topAnchors,
   mulberry32,
   pickSpread,
   sampleInside,
@@ -85,4 +86,20 @@ test('pickSpread returns k far-apart points from the input', () => {
 test('pickSpread pads short input and handles empty input', () => {
   expect(pickSpread([1, 2], 3)).toEqual([1, 2, 1, 2, 1, 2]);
   expect(pickSpread([], 3)).toEqual([]);
+});
+
+test('topAnchors finds the highest inside point per column', () => {
+  const t = topAnchors(tee, box, 4, 1);
+  // The foot of the upside-down T is at the top (y from -50 to -35), so every
+  // column that reaches ink finds it at the top edge.
+  expect(t).toHaveLength(8);
+  for (let i = 0; i < t.length; i += 2) {
+    expect(t[i + 1]!).toBeLessThan(-48);
+    expect(tee(t[i]!, t[i + 1]!)).toBe(true);
+  }
+});
+
+test('topAnchors skips columns with no ink', () => {
+  const thin = (x: number, y: number) => Math.abs(x) <= 2 && Math.abs(y) <= 50;
+  expect(topAnchors(thin, box, 4, 1)).toHaveLength(0);
 });

@@ -4,7 +4,10 @@
 export const CAP = 2048;
 export const LETTERS = 4;
 export const CHAIN = 16;
-export const ANCHORS_PER_LETTER = 4;
+/** Per letter: drip anchors on the bottom edge first, then on the top edge. */
+export const BOTTOM_ANCHORS = 4;
+export const TOP_ANCHORS = 4;
+export const ANCHORS_PER_LETTER = BOTTOM_ANCHORS + TOP_ANCHORS;
 export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
 export const CIRCLES_PER_LETTER = 10;
 /** Melt's puddle lives after the drip chains in the sprite buffer. */
@@ -94,6 +97,13 @@ export interface SimState {
   boost: Float32Array;
   /** Live puddle sprites, from POOL_BASE. */
   poolN: number;
+  /** Melt mode melts by itself, holds the puddle, rebuilds and loops. */
+  autoMelt: boolean;
+  /** Seconds in the current phase, and the phase it counts for. */
+  phaseT: number;
+  lastPhase: number;
+  /** Seconds the melted puddle has lain flat. */
+  flatT: number;
   /** Per letter: melted volume not yet emitted into the puddle, in drops. */
   emitAcc: Float32Array;
   // Scratch, so the steps never allocate.
@@ -197,6 +207,7 @@ export function resetMode(s: SimState): void {
   }
   s.letterOpacity = 1;
   s.poolN = 0;
+  s.flatT = 0;
   for (let i = 0; i < LETTERS; i++) {
     s.emitAcc[i] = 0;
   }
@@ -272,6 +283,10 @@ export function createState(word: WordData, mode: number): SimState {
     reach: new Float32Array(MAX_ANCHORS),
     boost: new Float32Array(MAX_ANCHORS),
     poolN: 0,
+    autoMelt: true,
+    phaseT: 0,
+    lastPhase: PHASE_INTACT,
+    flatT: 0,
     emitAcc: new Float32Array(LETTERS),
     cwx: new Float32Array(LETTERS * CIRCLES_PER_LETTER),
     cwy: new Float32Array(LETTERS * CIRCLES_PER_LETTER),
@@ -280,7 +295,9 @@ export function createState(word: WordData, mode: number): SimState {
     tmpB: new Float32Array(2),
   };
   for (let a = 0; a < MAX_ANCHORS; a++) {
-    s.rate[a] = 6 + 12 * nextRand(s);
+    // Top-edge liquid runs faster: it has a whole letter to cover.
+    const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
+    s.rate[a] = (6 + 12 * nextRand(s)) * (top ? 2.5 : 1);
   }
   // Like the reference: each letter drips from one anchor; some drips are
   // short, and at least one runs all the way to the floor.

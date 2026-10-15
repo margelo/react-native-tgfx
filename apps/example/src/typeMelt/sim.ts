@@ -31,11 +31,48 @@ export interface LetterValues {
   sy: Value;
 }
 
+/** Seconds the word stands before it starts to melt by itself. */
+const MELT_AFTER = 1.5;
+/** Seconds the puddle lies flat before the word rebuilds and melts again. */
+const HOLD_PUDDLE = 2;
+
+// Declared before `step`: the worklets plugin turns these into variables, so
+// they are not hoisted.
+/** Melt mode needs no swipe: it melts, lies flat a moment, rebuilds, and loops. */
+function autoMelt(s: SimState, dt: number): void {
+  'worklet';
+  if (s.phase === PHASE_INTACT && s.phaseT >= MELT_AFTER) {
+    destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+    return;
+  }
+  if (s.phase !== PHASE_DESTROYED) {
+    return;
+  }
+  for (let i = 0; i < LETTERS; i++) {
+    if (s.lsy[i] !== 0) {
+      s.flatT = 0;
+      return;
+    }
+  }
+  s.flatT += dt;
+  if (s.flatT >= HOLD_PUDDLE) {
+    s.phase = PHASE_REBUILDING;
+  }
+}
+
 export function step(s: SimState, dt: number): void {
   'worklet';
   // A backgrounded app or a GC pause hands us seconds; never integrate more than a frame at 30 fps.
   const h = dt > 0 ? Math.min(dt, MAX_DT) : 0;
   s.t += h;
+  if (s.phase !== s.lastPhase) {
+    s.lastPhase = s.phase;
+    s.phaseT = 0;
+  }
+  s.phaseT += h;
+  if (s.mode === MODE_MELT && s.autoMelt && s.pendingMode === s.mode) {
+    autoMelt(s, h);
+  }
   if (s.mode === MODE_MELT) {
     stepMelt(s, h);
   } else if (s.mode === MODE_EXPLODE) {
@@ -47,12 +84,11 @@ export function step(s: SimState, dt: number): void {
 
 export function destroy(s: SimState, imp: Impulse): void {
   'worklet';
-  if (s.pendingMode !== s.mode) {
+  // Melt runs by itself; swipes destroy only in the other modes.
+  if (s.pendingMode !== s.mode || s.mode === MODE_MELT) {
     return;
   }
-  if (s.mode === MODE_MELT) {
-    destroyMelt(s, imp);
-  } else if (s.mode === MODE_EXPLODE) {
+  if (s.mode === MODE_EXPLODE) {
     destroyExplode(s, imp);
   } else {
     destroyFall(s, imp);
