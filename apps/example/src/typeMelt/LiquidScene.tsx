@@ -3,7 +3,6 @@ import { PixelRatio } from 'react-native';
 import {
   Atlas,
   BlendColor,
-  Blur,
   Circle,
   Fill,
   Group,
@@ -22,7 +21,7 @@ import {
   CHROME_SOURCE,
   chromeUniforms,
   FINISHES,
-  softBlurPx,
+  softRadiusPx,
   type FinishName,
 } from './material';
 import { MESH_INDICES, MESH_VERTS } from './meshMelt';
@@ -116,12 +115,11 @@ function Liquid(props: LiquidSceneProps) {
           uTime: time,
           uMelt: melt,
         }}
-        sampleRadiusPx={Math.ceil(1.5 * scale) + 1}
+        sampleRadiusPx={Math.ceil(softRadiusPx(fontSize, scale) * 1.5) + 1}
       />
       <Group>
-        {/* Pass 1: the height field — tube letters and sphere droplets,
-            lightly blurred so they fillet where they meet. */}
-        <Blur blur={softBlurPx(fontSize, scale)} />
+        {/* Pass 1: the height field — tube letters and sphere droplets. The
+            shader fillets them where they meet. */}
         <HeightField {...props} />
       </Group>
     </Group>

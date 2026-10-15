@@ -16,17 +16,33 @@ uniform float3 uBounce;
 uniform float uIrid;
 uniform float uMelt;
 uniform float uSparkle;
+uniform float uSoft;
 
 float3 film(float t) {
   return 0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67)));
 }
 
 half4 main(float2 p) {
-  float h = content.eval(p).a;
+  // The fillet blur lives here, in the pass that already runs: a 3×3 tent
+  // over the height field joins drips to letters, and a Sobel over the same
+  // samples gives the slope. A separate <Blur> pass re-ran on every frame
+  // and held the melt under 60 fps.
+  float sr = uSoft;
+  float tc = content.eval(p).a;
+  float tl = content.eval(p + float2(-sr, 0.0)).a;
+  float tr = content.eval(p + float2(sr, 0.0)).a;
+  float tu = content.eval(p + float2(0.0, -sr)).a;
+  float td = content.eval(p + float2(0.0, sr)).a;
+  float tul = content.eval(p + float2(-sr, -sr)).a;
+  float tur = content.eval(p + float2(sr, -sr)).a;
+  float tdl = content.eval(p + float2(-sr, sr)).a;
+  float tdr = content.eval(p + float2(sr, sr)).a;
+  float h = tc * 0.25 + (tl + tr + tu + td) * 0.125 + (tul + tur + tdl + tdr) * 0.0625;
   float m = smoothstep(uThreshold - 0.04, uThreshold + 0.04, h);
-  float d = 1.5 * uScale;
-  float gx = content.eval(p + float2(d, 0.0)).a - content.eval(p - float2(d, 0.0)).a;
-  float gy = content.eval(p + float2(0.0, d)).a - content.eval(p - float2(0.0, d)).a;
+  // Sobel slope, rescaled to the old ±1.5 pt central difference so uGain holds.
+  float sk = (3.0 * uScale) / (8.0 * sr);
+  float gx = ((tr - tl) * 2.0 + (tur - tul) + (tdr - tdl)) * sk;
+  float gy = ((td - tu) * 2.0 + (tdl - tul) + (tdr - tur)) * sk;
   // Melting letters flatten into goo: the slope reads gentler as the melt
   // goes on (a growing blur did this at a cost of 9 fps).
   float gain = uGain * (1.0 - 0.45 * uMelt);
@@ -76,9 +92,10 @@ export const TUBE_EM = 0.16;
 export const ROUND_EM = 0.014;
 /** Blur that fillets letters and droplets together on screen, in font sizes. */
 export const SOFT_EM = 0.012;
-/** The fillet blur's sigma in drawing pixels (what tgfx's `<Blur>` takes). */
-export function softBlurPx(fontSize: number, scale: number): number {
-  return fontSize * SOFT_EM * scale;
+/** The shader's fillet sampling radius in drawing pixels. */
+export function softRadiusPx(fontSize: number, scale: number): number {
+  // A 3×3 tent at 1.4σ reads like the Gaussian it replaces.
+  return fontSize * SOFT_EM * scale * 1.4;
 }
 
 export type FinishName =
@@ -159,6 +176,7 @@ export function chromeUniforms(
     uBounce: f.bounce,
     uIrid: f.irid,
     uSparkle: f.sparkle,
+    uSoft: softRadiusPx(fontSize, scale),
     // Height runs 0 → 1 over TUBE_EM, sampled ±1.5 pt: this makes the profile a true circle.
     uGain: (fontSize * TUBE_EM) / 3,
     uLight: [-0.4, -0.85] as [number, number],
