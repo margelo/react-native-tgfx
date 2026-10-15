@@ -87,7 +87,7 @@ test('once destroyed, the letters keep melting until nothing stands', () => {
     expect(s.melted[i]!).toBeGreaterThan(0.999);
     // Each letter's top has come all the way down into the puddle.
     expect(topOf(s, i)).toBeGreaterThan(
-      s.word.floorY - 0.13 * s.word.h[i]! - 1,
+      s.word.floorY - 0.13 * 1.5 * s.word.h[i]! - 1,
     );
   }
 });
@@ -285,5 +285,18 @@ test('top streams start one by one, not all at once', () => {
         s.stretch[i * ANCHORS_PER_LETTER + BOTTOM_ANCHORS + k]!,
       ).toBeGreaterThan(0);
     }
+  }
+});
+
+test('while melting, only the resting drip and the top streams run', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  destroyMelt(s, { sx: 0, sy: 0, ex: 0, ey: 0, speed: 0 });
+  run(s, 6);
+  for (let i = 0; i < 4; i++) {
+    let running = 0;
+    for (let k = 0; k < ANCHORS_PER_LETTER; k++) {
+      if (s.stretch[i * ANCHORS_PER_LETTER + k]! > 0) running++;
+    }
+    expect(running).toBeLessThanOrEqual(1 + TOP_ANCHORS);
   }
 });

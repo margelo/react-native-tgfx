@@ -25,11 +25,11 @@ import {
 /** Rebuilding rewinds the melt clock this many times faster than it ran. */
 const REWIND = 6;
 /** Puddle drops one whole letter's volume makes. */
-const DROPS_PER_LETTER = 40;
+const DROPS_PER_LETTER = 14;
 /** A drip head resting on the floor, in drip radii. */
 const FOOT = 1.5;
 /** The largest a puddle drop grows, in drip radii. */
-const POOL_MAX = 2.2;
+const POOL_MAX = 1.8;
 /** Verlet velocity kept per 1/60 s: honey, not water. */
 const VISCOUS = 0.94;
 /** How fast a swipe's speed-up wears off, per second. */
@@ -138,7 +138,11 @@ export function stepMelt(s: SimState, dt: number): void {
     if (rebuilding) {
       s.stretch[a] = Math.max(0, s.stretch[a]! - (40 + s.stretch[a]! * 3) * dt);
     } else {
-      const limit = destroyed ? gap * 1.2 : gap * s.reach[a]!;
+      // While melting, only the resting drip and the top streams run: every
+      // anchor at once made a wall of strands under the word.
+      const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
+      const wet = top || s.reach[a]! > 0;
+      const limit = destroyed ? (wet ? gap * 1.2 : 0) : gap * s.reach[a]!;
       if (destroyed && s.wait[a]! > 0) {
         s.wait[a] = s.wait[a]! - dt;
       }

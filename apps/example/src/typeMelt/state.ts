@@ -109,6 +109,8 @@ export interface SimState {
   meltT: number;
   /** Per letter × MELT_COLS: when each control column starts to melt, seconds. */
   cstart: Float32Array;
+  /** Per letter × MELT_COLS: how deep that column's puddle is, × the base depth. */
+  cdepth: Float32Array;
   /** Per letter: how melted it is, 0..1 (the mean of its columns). */
   melted: Float32Array;
   /** When the last column finishes melting: the melt clock stops there. */
@@ -307,6 +309,7 @@ export function createState(word: WordData, mode: number): SimState {
     poolN: 0,
     meltT: 0,
     cstart: new Float32Array(LETTERS * MELT_COLS),
+    cdepth: new Float32Array(LETTERS * MELT_COLS),
     melted: new Float32Array(LETTERS),
     meltEnd: 0,
     autoMelt: true,
@@ -341,6 +344,8 @@ export function createState(word: WordData, mode: number): SimState {
       const n = hi > lo ? (s.tmpCols[c]! - lo) / (hi - lo) : 0.5;
       s.cstart[o + c] = 0.3 + i * 0.5 + 1.2 * n;
       s.meltEnd = Math.max(s.meltEnd, s.cstart[o + c]! + MELT_DURATION);
+      // A real puddle is uneven: thicker in some places than others.
+      s.cdepth[o + c] = 0.5 + nextRand(s);
     }
   }
   for (let a = 0; a < MAX_ANCHORS; a++) {

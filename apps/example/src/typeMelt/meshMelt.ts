@@ -30,18 +30,33 @@ function progressAt(s: SimState, k: number): number {
   return x * x * (3 - 2 * x);
 }
 
+/** Fractional control-column index of letter-local x: they span 1.6× the letter. */
+function columnAt(s: SimState, i: number, ax: number): number {
+  'worklet';
+  const f = ((ax / s.word.w[i]! + 0.8) / 1.6) * (MELT_COLS - 1);
+  return Math.max(0, Math.min(MELT_COLS - 1, f));
+}
+
 /** Melt progress, 0..1, of letter i at letter-local x. */
 export function columnProgress(s: SimState, i: number, ax: number): number {
   'worklet';
-  const w = s.word.w[i]!;
-  // Control columns span 1.6× the letter, so its edges melt like its middle.
-  const f = ((ax / w + 0.8) / 1.6) * (MELT_COLS - 1);
-  const c = Math.max(0, Math.min(MELT_COLS - 1, f));
+  const c = columnAt(s, i, ax);
   const c0 = Math.floor(c);
   const c1 = Math.min(MELT_COLS - 1, c0 + 1);
   const p0 = progressAt(s, i * MELT_COLS + c0);
   const p1 = progressAt(s, i * MELT_COLS + c1);
   return p0 + (p1 - p0) * (c - c0);
+}
+
+/** Puddle depth factor of letter i at letter-local x. */
+function columnDepth(s: SimState, i: number, ax: number): number {
+  'worklet';
+  const c = columnAt(s, i, ax);
+  const c0 = Math.floor(c);
+  const c1 = Math.min(MELT_COLS - 1, c0 + 1);
+  const d0 = s.cdepth[i * MELT_COLS + c0]!;
+  const d1 = s.cdepth[i * MELT_COLS + c1]!;
+  return d0 + (d1 - d0) * (c - c0);
 }
 
 /** Refreshes `s.melted`: each letter's mean column progress. */
@@ -71,7 +86,8 @@ export function meltPoint(
   const bottom = w.cy[i]! + h / 2;
   // The column slides down to the floor while its height shrinks to a puddle.
   const base = bottom + (w.floorY - bottom) * p;
-  const height = Math.max(h * Math.pow(1 - p, 1.2), h * PUDDLE_DEPTH * p);
+  const depth = PUDDLE_DEPTH * columnDepth(s, i, ax);
+  const height = Math.max(h * Math.pow(1 - p, 1.2), h * depth * p);
   // Height fraction above the base; the top compresses fastest, so mass settles low.
   const frac = (h / 2 - ay) / h;
   const f = frac <= 0 ? frac : Math.pow(frac, 1 + 1.2 * p);

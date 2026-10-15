@@ -65,7 +65,7 @@ test('a fully melted letter lies in a puddle on the floor, wider than it stood',
     for (let ay = -50; ay <= 50; ay += 10) {
       const [x, y] = at(s, 3, ax, ay);
       expect(y).toBeLessThanOrEqual(300 + 1e-3);
-      expect(y).toBeGreaterThanOrEqual(300 - 0.13 * 100 - 1e-3);
+      expect(y).toBeGreaterThanOrEqual(300 - 0.13 * 1.5 * 100 - 1e-3);
       left = Math.min(left, x);
       right = Math.max(right, x);
     }
@@ -119,4 +119,17 @@ test('grid textures span the whole image, in image pixels', () => {
   expect([uv[0], uv[1]]).toEqual([0, 0]);
   const last = (MESH_VERTS - 1) * 2;
   expect([uv[last], uv[last + 1]]).toEqual([200, 300]);
+});
+
+test('the puddle is uneven: its depth varies from column to column', () => {
+  const s = createState(fakeWord(), MODE_MELT);
+  s.meltT = 60;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let ax = -30; ax <= 30; ax += 3) {
+    const top = at(s, 2, ax, -50)[1]!;
+    lo = Math.min(lo, top);
+    hi = Math.max(hi, top);
+  }
+  expect(hi - lo).toBeGreaterThan(3);
 });
