@@ -1,15 +1,18 @@
 import { SPRITE_FLOATS } from 'react-native-tgfx';
 import {
   BLOB,
+  CHAIN,
   MODE_EXPLODE,
   MODE_FALL,
   MODE_MELT,
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  POOL_BASE,
   createState,
 } from '../../typeMelt/state';
 import { MESH_VERTS, updateMelted } from '../../typeMelt/meshMelt';
+import { RIBBON_VERTS } from '../../typeMelt/ribbon';
 import { destroy, publish, rebuild, setMode, step } from '../../typeMelt/sim';
 import { fakeWord } from '../../__fixtures__/typeMelt/fakeWord';
 
@@ -88,7 +91,16 @@ test('publish writes sprites, letter meshes, and a count that always moves', () 
   const opacity = v();
   const count = v();
   const melt = v();
-  publish(s, f, m, opacity, count, melt, 1234.5);
+  publish(
+    s,
+    f,
+    m,
+    new Float32Array(RIBBON_VERTS * 2),
+    opacity,
+    count,
+    melt,
+    1234.5,
+  );
   expect(melt.value).toBe(0);
   expect(f[4]).toBeCloseTo(s.r[0]! / (BLOB / 2));
   expect(f[5]).toBe(s.px[0]);
@@ -108,7 +120,16 @@ test('publish reports how melted the word is and bends its meshes', () => {
   const v = () => ({ value: -1 });
   const m = meshes();
   const melt = v();
-  publish(s, new Float32Array(s.n * SPRITE_FLOATS), m, v(), v(), melt, 0);
+  publish(
+    s,
+    new Float32Array(s.n * SPRITE_FLOATS),
+    m,
+    new Float32Array(RIBBON_VERTS * 2),
+    v(),
+    v(),
+    melt,
+    0,
+  );
   expect(melt.value).toBeGreaterThan(0.5);
   // The top-left vertex of a melted letter has come down near the floor.
   expect(m[0]![1]!).toBeGreaterThan(250);
@@ -156,16 +177,18 @@ describe('melt runs by itself', () => {
   });
 });
 
-test('publish hands the renderer only the sprites that are visible', () => {
+test('in melt mode, strands go to the ribbon; sprites are only drip heads and puddle drops', () => {
   const s = createState(fakeWord(), MODE_MELT);
-  for (let k = 0; k < 120; k++) step(s, 1 / 60);
-  let visible = 0;
-  for (let q = 0; q < s.n; q++) if (s.r[q]! > 0) visible++;
-  expect(visible).toBeLessThan(s.n);
+  for (let k = 0; k < 600; k++) step(s, 1 / 60);
+  let expected = 0;
+  for (let q = 0; q < s.n; q++) {
+    const head = q < POOL_BASE && q % CHAIN === CHAIN - 1;
+    if (s.r[q]! > 0 && (head || q >= POOL_BASE)) expected++;
+  }
   const f = new Float32Array(s.n * SPRITE_FLOATS);
   const count = { value: -1 };
-  publish(s, f, meshes(), { value: 0 }, count, { value: 0 }, 0);
-  expect(Math.floor(count.value)).toBe(visible);
-  for (let q = 0; q < visible; q++)
-    expect(f[q * SPRITE_FLOATS + 4]!).toBeGreaterThan(0);
+  const ribbon = new Float32Array(RIBBON_VERTS * 2);
+  publish(s, f, meshes(), ribbon, { value: 0 }, count, { value: 0 }, 0);
+  expect(Math.floor(count.value)).toBe(expected);
+  expect(ribbon.some(v => v !== 0)).toBe(true);
 });

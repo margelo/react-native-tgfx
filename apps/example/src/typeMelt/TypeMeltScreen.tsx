@@ -24,6 +24,12 @@ import {
   gridIndices,
   gridTextures,
 } from './meshMelt';
+import {
+  RIBBON_INDICES,
+  RIBBON_VERTS,
+  ribbonColors,
+  ribbonIndices,
+} from './ribbon';
 import { destroy, publish, rebuild, setMode, step } from './sim';
 import {
   BLOB,
@@ -53,7 +59,11 @@ const MODES = [
 
 // The sim lives on the UI runtime, not in a worklet closure: closures are
 // re-serialised when the component re-renders, which would fork the state.
-type Holder = { __typeMelt?: SimState; __typeMeltMeshes?: Float32Array[] };
+type Holder = {
+  __typeMelt?: SimState;
+  __typeMeltMeshes?: Float32Array[];
+  __typeMeltRibbon?: Float32Array;
+};
 
 function stateOf(): SimState | undefined {
   'worklet';
@@ -86,10 +96,19 @@ export function TypeMeltScreen() {
       }),
     ),
   );
+  const [ribbon] = useState(() =>
+    createVertexBuffer({
+      maxVertices: RIBBON_VERTS,
+      maxIndices: RIBBON_INDICES,
+      colors: true,
+    }),
+  );
   useEffect(() => {
     const indices = gridIndices();
     meshes.forEach(m => m.indices.set(indices));
-  }, [meshes]);
+    ribbon.indices.set(ribbonIndices());
+    ribbon.colors.set(ribbonColors());
+  }, [meshes, ribbon]);
   const letterOpacity = useSharedValue(1);
   const count = useSharedValue(0);
   const melt = useSharedValue(0);
@@ -157,21 +176,24 @@ export function TypeMeltScreen() {
       (globalThis as Holder).__typeMeltMeshes = meshes.map(
         m => meshViews(m).positions,
       );
+      (globalThis as Holder).__typeMeltRibbon = meshViews(ribbon).positions;
     });
     return () => {
       scheduleOnUI(() => {
         'worklet';
         delete (globalThis as Holder).__typeMelt;
         delete (globalThis as Holder).__typeMeltMeshes;
+        delete (globalThis as Holder).__typeMeltRibbon;
       });
     };
-  }, [word, meshes]);
+  }, [word, meshes, ribbon]);
 
   useFrameCallback(frame => {
     'worklet';
     const s = stateOf();
     const positions = (globalThis as Holder).__typeMeltMeshes;
-    if (!s || !positions) {
+    const strands = (globalThis as Holder).__typeMeltRibbon;
+    if (!s || !positions || !strands) {
       return;
     }
     step(s, (frame.timeSincePreviousFrame ?? 16) / 1000);
@@ -179,6 +201,7 @@ export function TypeMeltScreen() {
       s,
       spriteFloats(sprites),
       positions,
+      strands,
       letterOpacity,
       count,
       melt,
@@ -279,6 +302,7 @@ export function TypeMeltScreen() {
                 word={word}
                 heights={heights}
                 meshes={meshes}
+                ribbon={ribbon}
                 letterOpacity={letterOpacity}
                 blob={blob}
                 sprites={sprites}

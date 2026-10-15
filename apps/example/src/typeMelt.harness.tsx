@@ -17,6 +17,7 @@ import {
   gridTextures,
   writeMesh,
 } from './typeMelt/meshMelt';
+import { RIBBON_INDICES, RIBBON_VERTS } from './typeMelt/ribbon';
 import {
   ANCHORS_PER_LETTER,
   BLOB,
@@ -142,6 +143,13 @@ describe('TypeMelt material', () => {
         }),
       ),
     );
+    const [ribbon] = useState(() =>
+      createVertexBuffer({
+        maxVertices: RIBBON_VERTS,
+        maxIndices: RIBBON_INDICES,
+        colors: true,
+      }),
+    );
     const [heights, setHeights] = useState<HeightImage[] | null>(null);
     useEffect(() => {
       if (word) buildHeightImages(word, PixelRatio.get()).then(setHeights);
@@ -164,6 +172,7 @@ describe('TypeMelt material', () => {
         word={word}
         heights={heights}
         meshes={meshes}
+        ribbon={ribbon}
         letterOpacity={1}
         blob={blob}
         sprites={sprites}

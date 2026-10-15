@@ -4,9 +4,11 @@ import { SPRITE_FLOATS } from 'react-native-tgfx';
 import { destroyExplode, stepExplode } from './explode';
 import { destroyFall, stepFall } from './fall';
 import { writeMesh } from './meshMelt';
+import { writeRibbon } from './ribbon';
 import { destroyMelt, stepMelt } from './melt';
 import {
   BLOB,
+  CHAIN,
   LETTERS,
   MAX_DT,
   MODE_EXPLODE,
@@ -14,6 +16,7 @@ import {
   PHASE_DESTROYED,
   PHASE_INTACT,
   PHASE_REBUILDING,
+  POOL_BASE,
   type Impulse,
   type SimState,
 } from './state';
@@ -109,6 +112,7 @@ export function publish(
   s: SimState,
   f: Float32Array,
   meshes: Float32Array[],
+  ribbon: Float32Array,
   opacity: Value,
   count: Value,
   melt: Value,
@@ -117,9 +121,16 @@ export function publish(
   'worklet';
   // Pack only visible sprites: parked chains on dry anchors are hundreds of
   // zero-size sprites the renderer would otherwise still walk every frame.
+  // In melt mode the strands are drawn by the ribbon mesh: as sprites, only
+  // the bulbous drip heads and the puddle drops.
+  writeRibbon(s, ribbon);
+  const melting = s.mode === MODE_MELT;
   let live = 0;
   for (let i = 0; i < s.n; i++) {
     if (s.r[i]! <= 0) {
+      continue;
+    }
+    if (melting && i < POOL_BASE && i % CHAIN !== CHAIN - 1) {
       continue;
     }
     const o = live * SPRITE_FLOATS;

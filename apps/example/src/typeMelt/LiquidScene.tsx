@@ -26,6 +26,7 @@ import {
   type FinishName,
 } from './material';
 import { MESH_INDICES, MESH_VERTS } from './meshMelt';
+import { RIBBON_INDICES, RIBBON_VERTS } from './ribbon';
 import type { Value } from './sim';
 import { BLOB } from './state';
 import type { Word } from './word';
@@ -36,6 +37,8 @@ export interface LiquidSceneProps {
   heights: HeightImage[] | null;
   /** Per-letter mesh over its tube image: positions written every frame, rigid or melting. */
   meshes: VertexBuffer[];
+  /** Every drip strand as one ribbon mesh, white with the tube profile in alpha. */
+  ribbon: VertexBuffer;
   letterOpacity: Value | number;
   blob: TgfxImage | null;
   sprites: SpriteBuffer;
@@ -75,6 +78,7 @@ export function BlobSprite() {
 function HeightField({
   heights,
   meshes,
+  ribbon,
   letterOpacity,
   blob,
   sprites,
@@ -96,6 +100,11 @@ function HeightField({
           </Vertices>
         ))}
       </Group>
+      <Vertices
+        buffer={ribbon}
+        vertexCount={RIBBON_VERTS}
+        indexCount={RIBBON_INDICES}
+      />
       {blob && <Atlas image={blob} buffer={sprites} count={count} />}
     </>
   );
