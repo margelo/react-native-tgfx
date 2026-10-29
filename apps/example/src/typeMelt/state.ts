@@ -1,0 +1,412 @@
+// TypeMelt's simulation state: typed arrays only, created once on the UI
+// runtime and mutated in place by the per-mode steps — nothing allocates per frame.
+
+export const CAP = 2048;
+export const LETTERS = 4;
+export const CHAIN = 18;
+/** Per letter: drip anchors on the bottom edge first, then on the top edge. */
+export const BOTTOM_ANCHORS = 4;
+export const TOP_ANCHORS = 1;
+export const ANCHORS_PER_LETTER = BOTTOM_ANCHORS + TOP_ANCHORS;
+export const MAX_ANCHORS = LETTERS * ANCHORS_PER_LETTER;
+export const CIRCLES_PER_LETTER = 10;
+/** Control columns across each letter, each melting on its own schedule. */
+export const MELT_COLS = 8;
+/** Seconds one column takes to melt once it starts: real melting is slow. */
+export const MELT_DURATION = 18;
+/** Melt's puddle lives after the drip chains in the sprite buffer. */
+export const POOL_BASE = MAX_ANCHORS * CHAIN;
+export const POOL_CAP = 400;
+/** How much wider a letter gets as it slumps flat: 1 + SPREAD at a full melt. */
+export const SPREAD = 0.15;
+/** The blob sprite's texture size, in image pixels (rendered at pixelRatio 1). */
+export const BLOB = 64;
+export const MAX_DT = 1 / 30;
+export const GRAVITY = 1800;
+export const BOUNCE = 0.3;
+
+export const MODE_MELT = 0;
+export const MODE_EXPLODE = 1;
+export const MODE_FALL = 2;
+
+export const PHASE_INTACT = 0;
+export const PHASE_DESTROYED = 1;
+export const PHASE_REBUILDING = 2;
+
+/** Everything the sims read about the word: numbers and typed arrays only, so a worklet can capture it. */
+export interface WordData {
+  width: number;
+  height: number;
+  floorY: number;
+  fontSize: number;
+  /** Per letter: home centre and tight box size, canvas points. */
+  cx: Float32Array;
+  cy: Float32Array;
+  w: Float32Array;
+  h: Float32Array;
+  /** Droplet homes in canvas points, x/y pairs. */
+  homes: Float32Array;
+  homeCount: number;
+  /** Drip anchors in letter-local points, x/y pairs, ANCHORS_PER_LETTER per letter; NaN marks an unused slot. */
+  anchors: Float32Array;
+  /** Collision circle centres in letter-local points, x/y pairs, CIRCLES_PER_LETTER per letter. */
+  circles: Float32Array;
+  circleR: Float32Array;
+  /** Per letter: the tube height image's rect in letter-local points, x, y, w, h. */
+  tube: Float32Array;
+  /** Droplet radius, points. */
+  dropR: number;
+  seed: number;
+}
+
+/** A swipe: where it started and ended, and how fast it was going when it ended (points/s). */
+export interface Impulse {
+  sx: number;
+  sy: number;
+  ex: number;
+  ey: number;
+  speed: number;
+}
+
+export interface SimState {
+  word: WordData;
+  mode: number;
+  pendingMode: number;
+  phase: number;
+  /** Live sprites, drawn from index 0. */
+  n: number;
+  t: number;
+  letterOpacity: number;
+  rand: number;
+  // Sprites. ox/oy are melt's Verlet previous positions.
+  px: Float32Array;
+  py: Float32Array;
+  ox: Float32Array;
+  oy: Float32Array;
+  vx: Float32Array;
+  vy: Float32Array;
+  r: Float32Array;
+  // Letters: position, angle, vertical scale, and their velocities.
+  lx: Float32Array;
+  ly: Float32Array;
+  la: Float32Array;
+  lsy: Float32Array;
+  lvx: Float32Array;
+  lvy: Float32Array;
+  lva: Float32Array;
+  lvsy: Float32Array;
+  // Melt, per anchor.
+  stretch: Float32Array;
+  rate: Float32Array;
+  /** Share of the gap to the floor each anchor's drip hangs while intact; 0 = dry. */
+  reach: Float32Array;
+  /** Seconds before each anchor starts running once the melt begins. */
+  wait: Float32Array;
+  /** Seconds until each running drip lets go of its next drop. */
+  dropT: Float32Array;
+  boost: Float32Array;
+  /** Live puddle sprites, from POOL_BASE. */
+  poolN: number;
+  /** Melt clock, seconds: advances while melting, rewinds while rebuilding. */
+  meltT: number;
+  /** Per letter × MELT_COLS: when each control column starts to melt, seconds. */
+  cstart: Float32Array;
+  /** Per letter × MELT_COLS: how deep that column's puddle is, × the base depth. */
+  cdepth: Float32Array;
+  /** Per letter: how melted it is, 0..1 (the mean of its columns). */
+  melted: Float32Array;
+  /** When the last column finishes melting: the melt clock stops there. */
+  meltEnd: number;
+  /** Per letter: the melt clock its mesh was last written at; NaN forces a write. */
+  meshT: Float64Array;
+  /** Per letter: x, y, angle, scaleY its rigid mesh was last written at; NaN forces a write. */
+  meshPose: Float64Array;
+  /** Melt mode melts by itself, holds the puddle, rebuilds and loops. */
+  autoMelt: boolean;
+  /** Seconds in the current phase, and the phase it counts for. */
+  phaseT: number;
+  lastPhase: number;
+  /** Seconds the melted puddle has lain flat. */
+  flatT: number;
+  /** Per letter: melted volume not yet emitted into the puddle, in drops. */
+  emitAcc: Float32Array;
+  // Scratch, so the steps never allocate.
+  cwx: Float32Array;
+  cwy: Float32Array;
+  tmp: Float32Array;
+  tmpA: Float32Array;
+  tmpB: Float32Array;
+  tmpCols: Float32Array;
+}
+
+export function nextRand(s: SimState): number {
+  'worklet';
+  s.rand = (s.rand + 0x6d2b79f5) | 0;
+  let t = Math.imul(s.rand ^ (s.rand >>> 15), s.rand | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/**
+ * Letter-local (ax, ay) to canvas points: scale (a slumping letter widens as
+ * it flattens), then rotate, then translate — the group's transform order.
+ */
+export function letterPoint(
+  s: SimState,
+  i: number,
+  ax: number,
+  ay: number,
+  out: Float32Array,
+): void {
+  'worklet';
+  const x = ax * (1 + SPREAD * (1 - s.lsy[i]!));
+  const y = ay * s.lsy[i]!;
+  const c = Math.cos(s.la[i]!);
+  const n = Math.sin(s.la[i]!);
+  out[0] = s.lx[i]! + x * c - y * n;
+  out[1] = s.ly[i]! + x * n + y * c;
+}
+
+export function distToSegment(x: number, y: number, imp: Impulse): number {
+  'worklet';
+  const dx = imp.ex - imp.sx;
+  const dy = imp.ey - imp.sy;
+  const len2 = dx * dx + dy * dy;
+  const t =
+    len2 > 1e-9
+      ? Math.max(0, Math.min(1, ((x - imp.sx) * dx + (y - imp.sy) * dy) / len2))
+      : 0;
+  return Math.hypot(x - (imp.sx + dx * t), y - (imp.sy + dy * t));
+}
+
+/** Keeps sprite i above the floor and between the walls, bouncing off them. */
+export function collideBounds(s: SimState, i: number): void {
+  'worklet';
+  const r = s.r[i]!;
+  const w = s.word;
+  if (s.py[i]! > w.floorY - r) {
+    s.py[i] = w.floorY - r;
+    if (s.vy[i]! > 0) {
+      s.vy[i] = -s.vy[i]! * BOUNCE;
+    }
+    s.vx[i] = s.vx[i]! * 0.8;
+  }
+  if (s.px[i]! < r) {
+    s.px[i] = r;
+    if (s.vx[i]! < 0) {
+      s.vx[i] = -s.vx[i]! * BOUNCE;
+    }
+  } else if (s.px[i]! > w.width - r) {
+    s.px[i] = w.width - r;
+    if (s.vx[i]! > 0) {
+      s.vx[i] = -s.vx[i]! * BOUNCE;
+    }
+  }
+}
+
+/** Radius of drip node j: wide where it meets the letter, a thin neck, a fat bulb at the head. */
+export function nodeRadius(R: number, j: number): number {
+  'worklet';
+  if (j === 0) {
+    return R;
+  }
+  if (j === CHAIN - 1) {
+    return R * 0.95;
+  }
+  return R * (0.7 + 0.2 * (1 - j / (CHAIN - 1)));
+}
+
+/** Puts the current mode in its intact pose: letters home, sprites as that mode wants them at rest. */
+export function resetMode(s: SimState): void {
+  'worklet';
+  const w = s.word;
+  for (let i = 0; i < LETTERS; i++) {
+    s.lx[i] = w.cx[i]!;
+    s.ly[i] = w.cy[i]!;
+    s.la[i] = 0;
+    s.lsy[i] = 1;
+    s.lvx[i] = 0;
+    s.lvy[i] = 0;
+    s.lva[i] = 0;
+    s.lvsy[i] = 0;
+  }
+  s.letterOpacity = 1;
+  s.poolN = 0;
+  s.flatT = 0;
+  s.meltT = 0;
+  for (let i = 0; i < LETTERS; i++) {
+    s.melted[i] = 0;
+  }
+  for (let i = 0; i < LETTERS; i++) {
+    s.emitAcc[i] = 0;
+  }
+  if (s.mode !== MODE_MELT) {
+    s.n = 0;
+    return;
+  }
+  s.n = POOL_BASE;
+  const R = w.dropR * 1.2;
+  for (let a = 0; a < MAX_ANCHORS; a++) {
+    s.stretch[a] = 0;
+    s.boost[a] = 0;
+    const ax = w.anchors[a * 2]!;
+    const unused = Number.isNaN(ax);
+    if (!unused) {
+      letterPoint(
+        s,
+        (a / ANCHORS_PER_LETTER) | 0,
+        ax,
+        w.anchors[a * 2 + 1]!,
+        s.tmp,
+      );
+    }
+    for (let j = 0; j < CHAIN; j++) {
+      const k = a * CHAIN + j;
+      s.px[k] = s.ox[k] = unused ? 0 : s.tmp[0]!;
+      s.py[k] = s.oy[k] = unused ? 0 : s.tmp[1]!;
+      s.vx[k] = 0;
+      s.vy[k] = 0;
+      s.r[k] = unused ? 0 : nodeRadius(R, j);
+    }
+  }
+}
+
+export function finishRebuild(s: SimState): void {
+  'worklet';
+  s.phase = PHASE_INTACT;
+  s.mode = s.pendingMode;
+  resetMode(s);
+}
+
+/** A resting drip with this reach (share of the gap to the floor) lands on it. */
+const REACH_FLOOR = 1.1;
+
+export function createState(word: WordData, mode: number): SimState {
+  'worklet';
+  const s: SimState = {
+    word,
+    mode,
+    pendingMode: mode,
+    phase: PHASE_INTACT,
+    n: 0,
+    t: 0,
+    letterOpacity: 1,
+    rand: word.seed | 0,
+    px: new Float32Array(CAP),
+    py: new Float32Array(CAP),
+    ox: new Float32Array(CAP),
+    oy: new Float32Array(CAP),
+    vx: new Float32Array(CAP),
+    vy: new Float32Array(CAP),
+    r: new Float32Array(CAP),
+    lx: new Float32Array(LETTERS),
+    ly: new Float32Array(LETTERS),
+    la: new Float32Array(LETTERS),
+    lsy: new Float32Array(LETTERS),
+    lvx: new Float32Array(LETTERS),
+    lvy: new Float32Array(LETTERS),
+    lva: new Float32Array(LETTERS),
+    lvsy: new Float32Array(LETTERS),
+    stretch: new Float32Array(MAX_ANCHORS),
+    rate: new Float32Array(MAX_ANCHORS),
+    reach: new Float32Array(MAX_ANCHORS),
+    wait: new Float32Array(MAX_ANCHORS),
+    dropT: new Float32Array(MAX_ANCHORS),
+    boost: new Float32Array(MAX_ANCHORS),
+    poolN: 0,
+    meltT: 0,
+    cstart: new Float32Array(LETTERS * MELT_COLS),
+    cdepth: new Float32Array(LETTERS * MELT_COLS),
+    melted: new Float32Array(LETTERS),
+    meltEnd: 0,
+    meshT: new Float64Array(LETTERS).fill(NaN),
+    meshPose: new Float64Array(LETTERS * 4).fill(NaN),
+    autoMelt: true,
+    phaseT: 0,
+    lastPhase: PHASE_INTACT,
+    flatT: 0,
+    emitAcc: new Float32Array(LETTERS),
+    cwx: new Float32Array(LETTERS * CIRCLES_PER_LETTER),
+    cwy: new Float32Array(LETTERS * CIRCLES_PER_LETTER),
+    tmp: new Float32Array(2),
+    tmpA: new Float32Array(2),
+    tmpB: new Float32Array(2),
+    tmpCols: new Float32Array(MELT_COLS),
+  };
+  // Each letter melts column by column: smoothed noise staggers the columns,
+  // and the letters start one after another.
+  for (let i = 0; i < LETTERS; i++) {
+    const o = i * MELT_COLS;
+    for (let c = 0; c < MELT_COLS; c++) {
+      s.cstart[o + c] = nextRand(s);
+    }
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let c = 0; c < MELT_COLS; c++) {
+      const l = s.cstart[o + Math.max(0, c - 1)]!;
+      const r = s.cstart[o + Math.min(MELT_COLS - 1, c + 1)]!;
+      s.tmpCols[c] = (l + 2 * s.cstart[o + c]! + r) / 4;
+      lo = Math.min(lo, s.tmpCols[c]!);
+      hi = Math.max(hi, s.tmpCols[c]!);
+    }
+    for (let c = 0; c < MELT_COLS; c++) {
+      const n = hi > lo ? (s.tmpCols[c]! - lo) / (hi - lo) : 0.5;
+      // Letters give way about 2 s apart; columns within a letter, up to 2 s.
+      s.cstart[o + c] = 0.6 + i * 2.2 + 2.0 * n;
+      s.meltEnd = Math.max(s.meltEnd, s.cstart[o + c]! + MELT_DURATION);
+      // A real puddle is uneven: thicker in some places than others.
+      s.cdepth[o + c] = 0.5 + nextRand(s);
+    }
+  }
+  for (let a = 0; a < MAX_ANCHORS; a++) {
+    // Top-edge liquid runs faster: it has a whole letter to cover.
+    const top = a % ANCHORS_PER_LETTER >= BOTTOM_ANCHORS;
+    s.rate[a] = (6 + 12 * nextRand(s)) * (top ? 2.5 : 1);
+  }
+  // Like the reference: each letter drips from one anchor; some drips are
+  // short, and at least one runs all the way to the floor.
+  let longest = -1;
+  let lastWet = -1;
+  for (let i = 0; i < LETTERS; i++) {
+    // Prefer anchors on the letter's bottom edge: a drip from under an arm
+    // (the F's middle bar) closes the letter into another one.
+    const low = (a: number) =>
+      !Number.isNaN(word.anchors[a * 2]!) &&
+      word.anchors[a * 2 + 1]! > word.h[i]! * 0.25;
+    const used = (a: number) => !Number.isNaN(word.anchors[a * 2]!);
+    let lows = 0;
+    let all = 0;
+    for (
+      let a = i * ANCHORS_PER_LETTER;
+      a < (i + 1) * ANCHORS_PER_LETTER;
+      a++
+    ) {
+      if (low(a)) lows++;
+      if (used(a)) all++;
+    }
+    const eligible = lows > 0 ? low : used;
+    let pick = (nextRand(s) * (lows > 0 ? lows : all)) | 0;
+    for (
+      let a = i * ANCHORS_PER_LETTER;
+      a < (i + 1) * ANCHORS_PER_LETTER;
+      a++
+    ) {
+      s.reach[a] = 0;
+      if (!eligible(a) || pick-- !== 0) {
+        continue;
+      }
+      lastWet = a;
+      if (nextRand(s) < 0.4) {
+        s.reach[a] = REACH_FLOOR;
+        longest = a;
+      } else {
+        s.reach[a] = 0.2 + 0.25 * nextRand(s);
+      }
+    }
+  }
+  if (longest < 0 && lastWet >= 0) {
+    s.reach[lastWet] = REACH_FLOOR;
+  }
+  resetMode(s);
+  return s;
+}
