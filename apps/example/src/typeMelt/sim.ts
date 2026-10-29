@@ -53,6 +53,48 @@ function autoMelt(s: SimState, dt: number): void {
   }
 }
 
+/** Frame rates the screen can run at. 60 Hz is the default: a slow melt and
+ * a swirling sheen read the same as at 120, at about half the cost; 120 Hz
+ * keeps fast motion (an explode burst, a tumbling letter) at full smoothness. */
+export const FRAME_RATES = [60, 120] as const;
+export type FrameRate = (typeof FRAME_RATES)[number];
+export const FRAME_MS = 1000 / 60;
+/** Vsync timing jitters; a frame this close to due still counts. */
+const FRAME_SLACK_MS = 2;
+
+export interface Pacer {
+  /** Milliseconds since the last advanced frame. */
+  since: number;
+  /** Where we are in the current 60 Hz slot. */
+  phase: number;
+}
+
+export function createPacer(): Pacer {
+  'worklet';
+  return { since: 0, phase: 0 };
+}
+
+/**
+ * Called every vsync with its duration; returns the seconds to advance by
+ * when a slot of `frameMs` is due, else 0. Elapsed time is carried, never dropped,
+ * and a long stall advances once rather than in a burst of catch-up frames.
+ */
+export function pace(p: Pacer, dtMs: number, frameMs = FRAME_MS): number {
+  'worklet';
+  p.since += dtMs;
+  p.phase += dtMs;
+  if (p.phase < frameMs - FRAME_SLACK_MS) {
+    return 0;
+  }
+  p.phase -= frameMs;
+  if (p.phase > frameMs) {
+    p.phase = 0;
+  }
+  const out = p.since / 1000;
+  p.since = 0;
+  return out;
+}
+
 export function step(s: SimState, dt: number): void {
   'worklet';
   // A backgrounded app or a GC pause hands us seconds; never integrate more than a frame at 30 fps.

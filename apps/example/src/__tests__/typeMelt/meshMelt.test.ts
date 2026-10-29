@@ -185,3 +185,28 @@ test('writeMesh places every vertex exactly where meltPoint puts it', () => {
     }
   }
 });
+
+test('a rigid letter that has not moved is not rewritten', () => {
+  const s = createState(fakeWord(), MODE_FALL);
+  const m = new Float32Array(MESH_VERTS * 2);
+  writeMesh(s, 0, m);
+  m.fill(-1);
+  writeMesh(s, 0, m);
+  expect(m.every(v => v === -1)).toBe(true);
+  // Any change to the pose writes again.
+  s.la[0] = 0.1;
+  writeMesh(s, 0, m);
+  expect(m[0]).not.toBe(-1);
+});
+
+test('switching to melt rewrites a rigid letter even at the same pose', () => {
+  const s = createState(fakeWord(), MODE_FALL);
+  const m = new Float32Array(MESH_VERTS * 2);
+  writeMesh(s, 0, m);
+  s.mode = MODE_MELT;
+  s.meltT = 5;
+  updateMelted(s);
+  m.fill(-1);
+  writeMesh(s, 0, m);
+  expect(m[1]).not.toBe(-1);
+});

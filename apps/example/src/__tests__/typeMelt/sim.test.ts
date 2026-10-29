@@ -10,7 +10,15 @@ import {
   createState,
 } from '../../typeMelt/state';
 import { MESH_VERTS, updateMelted } from '../../typeMelt/meshMelt';
-import { destroy, publish, rebuild, setMode, step } from '../../typeMelt/sim';
+import {
+  createPacer,
+  destroy,
+  pace,
+  publish,
+  rebuild,
+  setMode,
+  step,
+} from '../../typeMelt/sim';
 import { fakeWord } from '../../__fixtures__/typeMelt/fakeWord';
 
 // The package's build output isn't present under Jest, so the mock is virtual.
@@ -168,4 +176,67 @@ test('publish hands the renderer only the sprites that are visible', () => {
   expect(Math.floor(count.value)).toBe(visible);
   for (let q = 0; q < visible; q++)
     expect(f[q * SPRITE_FLOATS + 4]!).toBeGreaterThan(0);
+});
+
+describe('frame pacing', () => {
+  const run = (vsyncMs: number, seconds: number, hz = 60) => {
+    const p = createPacer();
+    let frames = 0;
+    let advanced = 0;
+    for (let t = 0; t < seconds * 1000; t += vsyncMs) {
+      const dt = pace(p, vsyncMs, 1000 / hz);
+      if (dt > 0) {
+        frames++;
+        advanced += dt;
+      }
+    }
+    return { frames, advanced };
+  };
+
+  test('on a 120 Hz display it advances 60 times a second', () => {
+    const { frames } = run(1000 / 120, 10);
+    expect(frames).toBeGreaterThanOrEqual(598);
+    expect(frames).toBeLessThanOrEqual(601);
+  });
+
+  test('on a 60 Hz display it advances every frame', () => {
+    expect(run(1000 / 60, 10).frames).toBeGreaterThanOrEqual(599);
+  });
+
+  test('on a 90 Hz display it still holds 60 a second', () => {
+    const { frames } = run(1000 / 90, 10);
+    expect(frames).toBeGreaterThanOrEqual(590);
+    expect(frames).toBeLessThanOrEqual(601);
+  });
+
+  test('time is never lost: the advanced seconds match the wall clock', () => {
+    const { advanced } = run(1000 / 120, 10);
+    expect(advanced).toBeCloseTo(10, 1);
+  });
+
+  test('set to 120 Hz on a 120 Hz display it advances every frame', () => {
+    const { frames, advanced } = run(1000 / 120, 10, 120);
+    expect(frames).toBeGreaterThanOrEqual(1199);
+    expect(advanced).toBeCloseTo(10, 1);
+  });
+
+  test('set to 120 Hz on a 60 Hz display it advances every frame it gets', () => {
+    expect(run(1000 / 60, 10, 120).frames).toBeGreaterThanOrEqual(599);
+  });
+
+  test('switching rate mid-run takes effect on the next frame', () => {
+    const p = createPacer();
+    let frames = 0;
+    for (let k = 0; k < 120; k++)
+      if (pace(p, 1000 / 120, 1000 / 60) > 0) frames++;
+    for (let k = 0; k < 120; k++)
+      if (pace(p, 1000 / 120, 1000 / 120) > 0) frames++;
+    expect(frames).toBeGreaterThanOrEqual(60 + 119);
+  });
+
+  test('a long stall advances once, not in a burst of catch-up frames', () => {
+    const p = createPacer();
+    expect(pace(p, 2000, 1000 / 60)).toBeGreaterThan(0);
+    expect(pace(p, 8, 1000 / 60)).toBe(0);
+  });
 });

@@ -10,7 +10,6 @@ import {
   createVertexBuffer,
   meshViews,
   spriteFloats,
-  useClock,
   useFonts,
   useOffscreenImage,
   useSpriteBuffer,
@@ -24,7 +23,18 @@ import {
   gridIndices,
   gridTextures,
 } from './meshMelt';
-import { destroy, publish, rebuild, setMode, step } from './sim';
+import {
+  FRAME_RATES,
+  createPacer,
+  destroy,
+  pace,
+  publish,
+  rebuild,
+  setMode,
+  step,
+  type FrameRate,
+  type Pacer,
+} from './sim';
 import {
   BLOB,
   CAP,
@@ -53,7 +63,11 @@ const MODES = [
 
 // The sim lives on the UI runtime, not in a worklet closure: closures are
 // re-serialised when the component re-renders, which would fork the state.
-type Holder = { __typeMelt?: SimState; __typeMeltMeshes?: Float32Array[] };
+type Holder = {
+  __typeMelt?: SimState;
+  __typeMeltMeshes?: Float32Array[];
+  __typeMeltPacer?: Pacer;
+};
 
 function stateOf(): SimState | undefined {
   'worklet';
@@ -66,6 +80,9 @@ export function TypeMeltScreen() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [mode, setModeState] = useState(MODE_MELT);
   const [finish, setFinish] = useState<FinishName>('iridescent');
+  const [rate, setRate] = useState<FrameRate>(60);
+  // Read by the frame callback on the UI thread, so a switch needs no re-render there.
+  const frameMs = useSharedValue(1000 / 60);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -94,7 +111,9 @@ export function TypeMeltScreen() {
   const count = useSharedValue(0);
   const melt = useSharedValue(0);
   const sprites = useSpriteBuffer(CAP);
-  const time = useClock();
+  // The shader clock, advanced only on paced frames: a clock written every
+  // vsync would force a full redraw at the display's 120 Hz.
+  const time = useSharedValue(0);
   const blob = useOffscreenImage(
     <BlobSprite />,
     { width: BLOB, height: BLOB, pixelRatio: 1 },
@@ -153,6 +172,7 @@ export function TypeMeltScreen() {
     scheduleOnUI(() => {
       'worklet';
       (globalThis as Holder).__typeMelt = createState(data, start);
+      (globalThis as Holder).__typeMeltPacer = createPacer();
       // The UI runtime's views over the mesh buffers, made once, not per frame.
       (globalThis as Holder).__typeMeltMeshes = meshes.map(
         m => meshViews(m).positions,
@@ -162,6 +182,7 @@ export function TypeMeltScreen() {
       scheduleOnUI(() => {
         'worklet';
         delete (globalThis as Holder).__typeMelt;
+        delete (globalThis as Holder).__typeMeltPacer;
         delete (globalThis as Holder).__typeMeltMeshes;
       });
     };
@@ -171,10 +192,17 @@ export function TypeMeltScreen() {
     'worklet';
     const s = stateOf();
     const positions = (globalThis as Holder).__typeMeltMeshes;
-    if (!s || !positions) {
+    const pacer = (globalThis as Holder).__typeMeltPacer;
+    if (!s || !positions || !pacer) {
       return;
     }
-    step(s, (frame.timeSincePreviousFrame ?? 16) / 1000);
+    // Advance and draw at most at the chosen rate, whatever the display's.
+    const dt = pace(pacer, frame.timeSincePreviousFrame ?? 16, frameMs.value);
+    if (dt === 0) {
+      return;
+    }
+    time.value += dt;
+    step(s, dt);
     publish(
       s,
       spriteFloats(sprites),
@@ -256,6 +284,24 @@ export function TypeMeltScreen() {
               style={[styles.finishText, finish === name && styles.modeTextOn]}
             >
               {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={[styles.modes, styles.finishes]}>
+        {FRAME_RATES.map(hz => (
+          <Pressable
+            key={hz}
+            accessibilityRole="button"
+            accessibilityState={{ selected: rate === hz }}
+            onPress={() => {
+              setRate(hz);
+              frameMs.value = 1000 / hz;
+            }}
+            style={[styles.finish, rate === hz && styles.modeOn]}
+          >
+            <Text style={[styles.finishText, rate === hz && styles.modeTextOn]}>
+              {hz} Hz
             </Text>
           </Pressable>
         ))}

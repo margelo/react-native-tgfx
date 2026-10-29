@@ -119,6 +119,8 @@ export interface SimState {
   meltEnd: number;
   /** Per letter: the melt clock its mesh was last written at; NaN forces a write. */
   meshT: Float64Array;
+  /** Per letter: x, y, angle, scaleY its rigid mesh was last written at; NaN forces a write. */
+  meshPose: Float64Array;
   /** Melt mode melts by itself, holds the puddle, rebuilds and loops. */
   autoMelt: boolean;
   /** Seconds in the current phase, and the phase it counts for. */
@@ -318,6 +320,7 @@ export function createState(word: WordData, mode: number): SimState {
     melted: new Float32Array(LETTERS),
     meltEnd: 0,
     meshT: new Float64Array(LETTERS).fill(NaN),
+    meshPose: new Float64Array(LETTERS * 4).fill(NaN),
     autoMelt: true,
     phaseT: 0,
     lastPhase: PHASE_INTACT,

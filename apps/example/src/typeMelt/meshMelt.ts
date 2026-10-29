@@ -118,6 +118,21 @@ export function writeMesh(
   const th = t[i * 4 + 3]!;
   if (s.mode !== MODE_MELT) {
     s.meshT[i] = NaN;
+    // A rigid letter only needs rewriting when its pose changes.
+    const k = i * 4;
+    const pose = s.meshPose;
+    if (
+      pose[k] === s.lx[i] &&
+      pose[k + 1] === s.ly[i] &&
+      pose[k + 2] === s.la[i] &&
+      pose[k + 3] === s.lsy[i]
+    ) {
+      return;
+    }
+    pose[k] = s.lx[i]!;
+    pose[k + 1] = s.ly[i]!;
+    pose[k + 2] = s.la[i]!;
+    pose[k + 3] = s.lsy[i]!;
     const c = Math.cos(s.la[i]!);
     const n = Math.sin(s.la[i]!);
     const sx = 1 + SPREAD * (1 - s.lsy[i]!);
@@ -133,6 +148,7 @@ export function writeMesh(
     }
     return;
   }
+  s.meshPose[i * 4] = NaN;
   // A melt mesh only moves when the melt clock does.
   if (s.meshT[i] === s.meltT) {
     return;
