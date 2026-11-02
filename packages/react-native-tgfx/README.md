@@ -4,9 +4,30 @@ A **declarative, Skia-style GPU 2D canvas** for React Native, backed by Tencent'
 [**tgfx**](https://github.com/Tencent/tgfx) and built with
 [**Nitro Modules**](https://nitro.margelo.com).
 
-Render shapes, strokes, paths, gradients, images and text through a React
-component tree that compiles to a single native draw-program and runs on the GPU
-(Metal on iOS, OpenGL on Android).
+Render shapes, strokes, paths, gradients, images and text through React
+components or an imperative `Scene` API. Both compile to a native draw program
+that runs on the GPU: Metal on iOS, Vulkan by default on Android, or OpenGL ES
+with a build-time opt-in.
+
+Currently an alpha release. See the [documentation](../../docs/content/docs)
+for animation, runtime shaders, camera frames, effects and offscreen export.
+
+## Install
+
+```bash
+npm install react-native-tgfx@alpha react-native-nitro-modules
+```
+
+Animation, camera and video also need `react-native-reanimated` and
+`react-native-worklets`.
+
+Rebuild the native app after installing. On iOS, install the pods first:
+
+```bash
+cd ios && pod install
+```
+
+## Draw
 
 ```tsx
 import { Canvas, Rect, Circle, Path, Image, Text, LinearGradient, useImage } from 'react-native-tgfx'
@@ -36,23 +57,42 @@ function Hello() {
 ## How it works
 
 ```
-<Canvas> children
-   │  (custom react-reconciler, persistence mode)
+<Canvas> children / imperative Scene nodes
    ▼
-immutable node tree ──► JSON draw-program (compiler) ──► `scene` prop
-   │
-   ▼  Nitro HybridView (TgfxView)
-Swift / Kotlin view shell (CAMetalLayer / TextureView)
-   │
-   ▼  shared C++ engine (nlohmann::json → tgfx::Canvas)
-tgfx ──► Metal (iOS) / OpenGL (Android) ──► GPU
+scene compiler
+   ▼
+binary Float64Array program + string-table delta
+   │  setScene() — direct Nitro hybrid-object call
+   ▼
+shared C++ renderer → tgfx::Canvas
+   │  dedicated render thread / serial render queue
+   ▼
+Metal (iOS) / Vulkan or OpenGL ES (Android) → GPU
 ```
 
-- A dedicated **react-reconciler** turns the component tree into an immutable
-  scene and compiles it to a compact JSON program on every change.
-- A single Nitro **`TgfxView`** receives that program via its `scene` string prop.
-  The Swift/Kotlin shell only hosts the GPU surface; all drawing is shared C++.
-- Drawing happens on the platform's display-link / choreographer thread.
+- Plain drawing elements use a direct-node fast path; trees with custom
+  components use a persistence-mode `react-reconciler`. Both feed the same
+  scene compiler as the imperative `Scene` API.
+- Scene commits send a binary program and a string-table delta through
+  `setScene()`, without a scene prop or a Fabric shadow-tree commit. Native
+  code compiles the program once per scene change and replays it when dirty.
+- Reanimated shared values and imperative node handles update live slots
+  without React renders or re-uploading the scene. Props without slots fall
+  back to re-encoding. See [Animation](../../docs/content/docs/animation.mdx)
+  and [Imperative](../../docs/content/docs/imperative.mdx).
+- Drawing runs on Android's dedicated `TgfxRender` thread and an iOS serial
+  render queue. Idle canvases suspend rendering until something changes.
+- iOS hosts a `CAMetalLayer`. Android uses a `SurfaceView` by default; set
+  `composite="texture"` for a `TextureView` inside the view hierarchy.
+
+### Android rendering backend
+
+Vulkan is the default. To build with OpenGL ES instead, add this to your app's
+`android/gradle.properties` and rebuild:
+
+```properties
+TgfxVulkan=OFF
+```
 
 ## Components
 
@@ -95,25 +135,34 @@ packed `0xAARRGGBB` number.
 
 ## Requirements
 
-- React Native **0.78+** with the **New Architecture** (Nitro Views are Fabric-only)
-- iOS: Xcode 16.4+, Metal; Android: NDK 27+, `compileSdk` 34+, OpenGL
+- React Native with the **New Architecture** (Nitro Views are Fabric-only).
+- `react-native-nitro-modules` **0.36.5+**.
+- iOS: Metal. Android: Vulkan by default, or OpenGL ES with `TgfxVulkan=OFF`.
 
-## Install (monorepo / local)
+The [example app](../../apps/example/package.json) currently uses React Native
+0.85.3 and React 19.2.3. See [Contributing](../../CONTRIBUTING.md) for the native
+build and test setup.
 
-tgfx is a git submodule built from source.
+## Monorepo setup
+
+Published npm packages include tgfx's prebuilt static libraries. For a git
+checkout, run these commands from the repository root to install dependencies
+and download the pinned prebuilt libraries and headers:
+
+```bash
+bun install
+bun run bootstrap
+```
+
+This does not require access to the private tgfx submodule. To build tgfx from
+source instead, initialize the submodule, fetch its dependencies with `depsync`,
+then run the platform build scripts from the repository root:
 
 ```bash
 git submodule update --init --recursive
-# fetch tgfx's third_party (depsync) — see scripts/
-cd packages/react-native-tgfx/cpp/third_party/tgfx && depsync
-```
-
-Both platforms link tgfx as a prebuilt static lib (npm installs ship it; a git
-checkout builds it once):
-
-```bash
+(cd packages/react-native-tgfx/cpp/third_party/tgfx && npx --yes depsync)
 bash packages/react-native-tgfx/scripts/build-tgfx-ios.sh       # device + simulator slices
-bash packages/react-native-tgfx/scripts/build-tgfx-android.sh   # all 4 ABIs, or pass a subset
+bash packages/react-native-tgfx/scripts/build-tgfx-android.sh   # OpenGL ES + Vulkan, all 4 ABIs
 ```
 
 ## On-device rendering tests
@@ -124,22 +173,21 @@ navigation and no UI selectors.
 
 ```bash
 cd apps/example
-npx react-native run-android          # rebuild once after adding @react-native-harness/ui
-npx react-native-harness --harnessRunner android-emulator
+bun run android                      # install a debug build on the configured device
+bun run harness
 ```
 
 Tests live in `apps/example/src/*.harness.tsx`; baselines land in
 `apps/example/src/__image_snapshots__/<runner>/`. Runners are declared in
 `apps/example/rn-harness.config.mjs`.
 
-**`android-emulator` is the authoritative runner.** It targets the
-`Pixel_8_API_35` AVD, which anyone can recreate, so a diff there is a rendering
-change rather than a different phone. Review that set as the source of truth.
-
-The `android` runner (motorola moto g35 5G) is **advisory**: real GPU and real
-driver, but its baselines only ever match that one phone. GPU, density and
-anti-aliasing all move pixels, so a diff there on another device is not a
-regression — check the emulator before believing it.
+The default `android` runner targets a Samsung SM-E146B. Image baselines are
+device-specific: GPU, density and anti-aliasing affect the pixels. Configure
+your device in `rn-harness.config.mjs` and review regenerated baselines when
+changing devices. Run image suites on a physical device; the software emulator
+renderer does not draw image-backed scenes correctly. See
+[Contributing](../../CONTRIBUTING.md#running-the-tests) for the iOS simulator
+and CI runners.
 
 **Never delete a baseline to "fix" a failure.** A missing baseline is written on
 the spot and reported as a pass, so a checkout with no baselines passes without
