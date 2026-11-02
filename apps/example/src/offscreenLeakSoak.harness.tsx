@@ -1,4 +1,4 @@
-// Run with scripts/leak-check.mjs; memory is measured outside the app.
+// Pixel assertions verify the workload; memory is measured outside the app.
 import { describe, expect, test } from 'react-native-harness';
 import {
   Scene,
