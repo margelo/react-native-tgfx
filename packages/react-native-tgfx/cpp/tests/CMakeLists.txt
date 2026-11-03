@@ -17,7 +17,7 @@ add_executable(SceneTest SceneTest.cpp ../Scene/TgfxScene.cpp ../Path/SvgPath.cp
 if(APPLE)
     enable_language(OBJCXX)
     set_property(TARGET SceneTest PROPERTY OBJCXX_STANDARD 20)
-    target_sources(SceneTest PRIVATE ../../ios/TgfxOffscreenSurface.mm)
+    target_sources(SceneTest PRIVATE ../../ios/TgfxAutoreleasePool.mm)
     target_link_libraries(SceneTest "-framework Foundation")
 endif()
 # tgfx's src too: the EXIF test names JpegCodec rather than going through
