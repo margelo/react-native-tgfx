@@ -1,11 +1,6 @@
 import type { MaybeSharedValue } from '../compiler/values'
 import { reanimated, type Reanimated } from './peer'
-import {
-  slotsOf,
-  valuesOf,
-  type BoxedSlots,
-  type FlagBlock,
-} from './slotFlags'
+import { slotsOf, valuesOf, type BoxedSlots, type FlagBlock } from './slotFlags'
 
 /** A value slot this package created, rather than one the caller animates. */
 export type LiveValue = MaybeSharedValue<number>
@@ -40,7 +35,11 @@ interface BlockStringSlot extends MaybeSharedValue<string> {
   __tgfxStrAt: number
 }
 
-export function liveFromBlock(block: FlagBlock, at: number, initial: number): LiveValue {
+export function liveFromBlock(
+  block: FlagBlock,
+  at: number,
+  initial: number
+): LiveValue {
   block.values[at] = initial
   const slot: BlockSlot = {
     _isReanimatedSharedValue: true,
@@ -57,7 +56,11 @@ export function liveFromBlock(block: FlagBlock, at: number, initial: number): Li
   return slot
 }
 
-export function liveStringFromBlock(block: FlagBlock, at: number, initial: string): LiveString {
+export function liveStringFromBlock(
+  block: FlagBlock,
+  at: number,
+  initial: string
+): LiveString {
   if (initial !== '') {
     block.slots.setString(at, initial)
   }
