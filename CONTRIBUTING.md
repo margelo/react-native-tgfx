@@ -34,10 +34,10 @@ bundle install && (cd ios && bundle exec pod install) && bun run ios
 "Unicode Normalization not appropriate for ASCII-8BIT". Prefix it with
 `LANG=en_US.UTF-8` if your shell does not set one.
 
-The app has three screens behind the tab bar: the feature gallery, face blur,
-and the camera effects. The two camera screens ask for the camera permission
-the first time they are opened, and fall back to a message when the device has
-no camera — an emulator without a webcam included.
+The tab bar switches between the feature gallery, the camera effects and the
+other demos. The camera screen asks for the camera permission the first time it
+is opened, and falls back to a message when the device has no camera - an
+emulator without a webcam included.
 
 ## Running the tests
 

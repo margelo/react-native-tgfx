@@ -117,9 +117,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-xcode${{ env.XCODE_VERSION }}-dd-
 
-      # x86_64 only: GoogleMLKit (react-native-vision-camera-face-detector)
-      # ships no arm64 simulator slice and excludes arm64 from simulator builds
-      # of the app, so the app runs in the simulator under Rosetta.
+      # arm64 only: the runner is Apple Silicon, so the simulator runs natively
+      # and a second slice would only double the build.
       - name: Build the example app for the simulator
         working-directory: apps/example/ios
         run: |
@@ -130,18 +129,19 @@ jobs:
             -sdk iphonesimulator \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            ARCHS=x86_64 \
+            ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             build | xcbeautify --renderer github-actions
-
-      - name: Install Rosetta
-        run: softwareupdate --install-rosetta --agree-to-license
 
       - name: Install Watchman
         run: brew install watchman
 
       - name: Run Harness E2E tests
         uses: callstackincubator/react-native-harness@v1.4.0
+        env:
+          # Metro runs in the harness process and keeps a graph per test file,
+          # past Node's ~2 GB default on this 7 GB runner (Ubuntu's 16 GB gets ~4 GB).
+          NODE_OPTIONS: --max-old-space-size=5120
         with:
           runner: ios-sim
           projectRoot: apps/example
