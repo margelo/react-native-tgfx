@@ -35,23 +35,43 @@ interface BlockStringSlot extends MaybeSharedValue<string> {
   __tgfxStrAt: number
 }
 
+/**
+ * A slot object whose keys cannot be redefined. In dev, react-native-worklets
+ * redefines every configurable key of an object a worklet captures - on the
+ * original, not only the clone - as a getter frozen at capture time and a
+ * setter that only warns. A captured block slot then dropped every JS-thread
+ * write. Non-configurable keys are skipped, and stay enumerable so the clone
+ * still carries `__tgfxBoxed` and the slot index.
+ */
+function pinnedSlot<T extends object>(keys: PropertyDescriptorMap): T {
+  const slot = {}
+  for (const key in keys) {
+    Object.defineProperty(slot, key, {
+      ...keys[key],
+      enumerable: true,
+      configurable: false,
+    })
+  }
+  return slot as T
+}
+
 export function liveFromBlock(
   block: FlagBlock,
   at: number,
   initial: number
 ): LiveValue {
   block.values[at] = initial
-  const slot: BlockSlot = {
-    _isReanimatedSharedValue: true,
-    __tgfxBoxed: block.boxed,
-    __tgfxAt: at,
-    get value(): number {
-      return block.values[at]!
+  const slot = pinnedSlot<BlockSlot>({
+    _isReanimatedSharedValue: { value: true },
+    __tgfxBoxed: { value: block.boxed },
+    __tgfxAt: { value: at },
+    value: {
+      get: (): number => block.values[at]!,
+      set: (v: number) => {
+        block.values[at] = v
+      },
     },
-    set value(v: number) {
-      block.values[at] = v
-    },
-  }
+  })
   LIVE.add(slot)
   return slot
 }
@@ -64,17 +84,17 @@ export function liveStringFromBlock(
   if (initial !== '') {
     block.slots.setString(at, initial)
   }
-  const slot: BlockStringSlot = {
-    _isReanimatedSharedValue: true,
-    __tgfxBoxed: block.boxed,
-    __tgfxStrAt: at,
-    get value(): string {
-      return block.slots.getString(at)
+  const slot = pinnedSlot<BlockStringSlot>({
+    _isReanimatedSharedValue: { value: true },
+    __tgfxBoxed: { value: block.boxed },
+    __tgfxStrAt: { value: at },
+    value: {
+      get: (): string => block.slots.getString(at),
+      set: (v: string) => {
+        block.slots.setString(at, v)
+      },
     },
-    set value(v: string) {
-      block.slots.setString(at, v)
-    },
-  }
+  })
   LIVE.add(slot)
   return slot
 }
