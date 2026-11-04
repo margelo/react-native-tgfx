@@ -57,7 +57,6 @@ class OffscreenContext {
   }
 
  private:
-  // First, so it outlives the device reference and still drains if the constructor throws.
   AutoreleasePool pool_;
   std::shared_ptr<tgfx::Device> device_;
   tgfx::Context* context_ = nullptr;
