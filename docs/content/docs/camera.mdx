@@ -140,6 +140,91 @@ like a detector.
 The [`viewport`](/docs/animation#zoom-and-pan) doesn't move a `<CameraFrame>`.
 Wrap it in `<Group transform>` to zoom it.
 
+## Tap to focus
+
+`<Canvas>` has no touch props, so wrap it in a `Pressable`. Map the tap back into
+the buffer and pass it to VisionCamera's `focusTo`:
+
+```tsx title="Preview.tsx"
+import { useRef } from 'react'
+import { Pressable, StyleSheet } from 'react-native'
+import {
+  CommonResolutions,
+  VisionCamera,
+  useCamera,
+  useFrameOutput,
+} from 'react-native-vision-camera'
+import {
+  Canvas,
+  CameraFrame,
+  useCameraFrame,
+  type CameraFramePosture,
+} from 'react-native-tgfx'
+
+export function Preview() {
+  const { image, posture, onFrame } = useCameraFrame()
+  const size = useRef({ width: 0, height: 0 })
+
+  const frameOutput = useFrameOutput({
+    pixelFormat: 'yuv',
+    // The sensor's aspect: with no preview view, Android meters over the whole sensor.
+    targetResolution: CommonResolutions.HD_4_3,
+    dropFramesWhileBusy: true,
+    // Buffers stay in sensor space, which focusTo reads. <CameraFrame> rotates them.
+    enablePhysicalBufferRotation: false,
+    allowDeferredStart: false,
+    onFrame,
+  })
+
+  const camera = useCamera({
+    isActive: true,
+    device: 'back',
+    outputs: [frameOutput],
+  })
+
+  return (
+    <Pressable
+      style={StyleSheet.absoluteFill}
+      onLayout={(e) => {
+        size.current = e.nativeEvent.layout
+      }}
+      onPress={({ nativeEvent: { locationX, locationY } }) => {
+        if (camera == null || posture.width === 0) return
+        const p = toBufferPoint(locationX, locationY, size.current, posture)
+        const point = VisionCamera.createNormalizedMeteringPoint(p.x, p.y)
+        // Rejects when a newer tap cancels it.
+        camera.focusTo(point, {}).catch(() => {})
+      }}
+    >
+      <Canvas style={StyleSheet.absoluteFill} opaque={true}>
+        <CameraFrame image={image} {...posture} />
+      </Canvas>
+    </Pressable>
+  )
+}
+
+/** Undoes <CameraFrame>'s 'cover' fit, rotation and mirror: a view point to 0-1 in the buffer. */
+function toBufferPoint(
+  x: number,
+  y: number,
+  view: { width: number; height: number },
+  { rotation, mirror, width, height }: CameraFramePosture
+) {
+  const turns = Math.round(rotation / 90) & 3
+  const w = turns & 1 ? height : width
+  const h = turns & 1 ? width : height
+  const scale = Math.max(view.width / w, view.height / h)
+  const a = 0.5 + (x - view.width / 2) / (scale * w)
+  const b = 0.5 + (y - view.height / 2) / (scale * h)
+  const u = turns === 0 ? a : turns === 1 ? b : turns === 2 ? 1 - a : 1 - b
+  const v = turns === 0 ? b : turns === 1 ? 1 - a : turns === 2 ? 1 - b : a
+  return { x: mirror ? 1 - u : u, y: v }
+}
+```
+
+Not with `useTgfxCameraSink`, which needs `enablePhysicalBufferRotation: true`.
+If Android doesn't refocus, pass `{ adaptiveness: 'locked' }`.
+
 ## Shading a frame
 
 <Tabs items={['Declarative', 'Imperative']}>
