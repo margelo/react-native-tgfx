@@ -12,12 +12,21 @@ Static scenes: 20,000 shapes, 3,600 images, a 40-octave full-screen shader, a
 repeating image pattern, 10,000 cubic paths (half stroked) and 6,000 texts, each
 under one animated rotation driven by a shared value. `paths<N>` runs any other
 path count (`paths900` is the scene the tables before 2026-11-10 used; both
-engines sit at 120 fps on it on a current flagship).
+engines sit at 120 fps on it on a current flagship). The default matrix runs
+`paths900`, `paths2500`, `paths5000` and `paths` (10,000), so a table shows
+where each engine falls off.
 
 Skia draws the static shapes through `Skia.ShapeBlob` + `drawShapes` (3.10),
 recorded once into a picture: its explicit batched-shape API, the counterpart of
 the batching tgfx does internally for plain `<Rect>`/`<Circle>` nodes. The
-unbatched Skia path is the `shapes-picture` row.
+unbatched Skia path is the `shapes-picture` row. Two more rows hold the
+technique equal:
+
+| scene | tgfx | skia |
+|---|---|---|
+| `shapes` | 20,000 `<Rect>`/`<Circle>` nodes | one ShapeBlob |
+| `shapes-nodes` | 20,000 `<Rect>`/`<Circle>` nodes | 20,000 `<Rect>`/`<Circle>` nodes |
+| `shapes-atlas` | a white circle and rect rasterized once into an atlas, 20,000 tinted quads in one `<Vertices>` | one ShapeBlob (the same technique, built in) |
 
 Per-shape scenes (`AnimScenes.tsx`): every shape orbits its own home on its own
 phase and speed, so no transform can be shared and tgfx's draw reordering
@@ -56,7 +65,7 @@ app and the rows stop.
 | flag | default | |
 |---|---|---|
 | `--engines` | `tgfx,skia` | engine order; `skia,tgfx` runs skia first |
-| `--scenes` | all nine | subset, e.g. `paths,anim-imp`, or `paths2500` for another path count |
+| `--scenes` | all fourteen | subset, e.g. `paths,anim-imp`, or `paths7500` for another path count |
 | `--views` | `surface,texture` | outer loop of the matrix |
 | `--skip` | none | `engine:scene` pairs to leave out, e.g. `tgfx:anim-imp` |
 | `--order` | `sequential` | `alternate` runs every engine per scene |

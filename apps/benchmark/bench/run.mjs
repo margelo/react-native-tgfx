@@ -28,7 +28,7 @@ const PRESENT = arg('present', 'atrace');
 // --gap <seconds> idles the phone with no canvas between combos, so heat from one
 // engine's run is not carried into the next one's.
 const GAP = Number(arg('gap', '0'));
-const ALL_SCENES = 'shapes,images,shader,pattern,paths,text,anim-decl,anim-imp,shapes-picture';
+const ALL_SCENES = 'shapes,shapes-nodes,shapes-atlas,images,shader,pattern,paths900,paths2500,paths5000,paths,text,anim-decl,anim-imp,shapes-picture';
 // surface: both engines on a SurfaceView; texture: both on a TextureView.
 const VIEWS = arg('views', 'surface,texture');
 // --skip tgfx:anim-imp drops engine:scene pairs (from every view).
