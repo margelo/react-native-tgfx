@@ -2,7 +2,7 @@
 // whole matrix by itself and prints one `[bench] tick ...` line per second to
 // logcat; bench/run.mjs pairs those with host-side CPU and PSS samples.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, Linking, StyleSheet, Text as RNText, View } from 'react-native';
+import { Linking, StyleSheet, Text as RNText, View } from 'react-native';
 import {
   Easing,
   cancelAnimation,
@@ -27,7 +27,6 @@ import {
 } from 'react-native-tgfx';
 import {
   Canvas as SkCanvas,
-  Circle as SkCircle,
   Fill as SkFill,
   Group as SkGroup,
   Image as SkImageView,
@@ -36,25 +35,29 @@ import {
   Rect as SkRect,
   Shader as SkShader,
   Text as SkText,
+  TextBlob as SkTextBlobView,
   Skia,
   matchFont,
   vec,
   type SkImage,
 } from 'react-native-skia';
 
-const { width: W, height: H } = Dimensions.get('window');
-const CX = W / 2;
-const CY = H / 2;
+import { ANIM_SCENES, SkBlobShapes, SkiaAnimScene, TgfxAnimScene, TgfxImperativeView, type View as BackingView } from './AnimScenes';
+import { BG, CX, CY, H, PALETTE, SHAPES, W } from './layout';
 
-// react-native-skia 3.8 has one canvas, on Graphite; 3.0's separate GraphiteCanvas is gone.
+// react-native-skia 3.x has one canvas, on Graphite.
 const ENGINES = ['tgfx', 'skia'] as const;
-const SCENES = ['shapes', 'images', 'shader', 'pattern', 'paths', 'text'] as const;
+const SCENES = ['shapes', 'images', 'shader', 'pattern', 'paths', 'text', ...ANIM_SCENES] as const;
+// surface: tgfx composite="layer", skia backingView SurfaceView.
+// texture: tgfx composite="texture", skia backingView TextureView (its default).
+const VIEWS = ['surface', 'texture'] as const;
 const COMBO_MS = 28_000; // 3s settle + 20s measured (run.mjs trims the settle)
 type Engine = (typeof ENGINES)[number];
-type Combo = [Engine, string];
+type Combo = [Engine, string, BackingView];
 
-// Launch URL picks the matrix: bench://run?engines=skia,tgfx&scenes=paths&order=alternate&reps=2&gap=30
+// Launch URL picks the matrix: bench://run?engines=skia,tgfx&scenes=paths&views=surface,texture&order=alternate&reps=2&gap=30
 // order=sequential runs every scene per engine; alternate runs both engines per scene.
+// Views are the outer loop: the whole matrix on one view, then on the next.
 // gap=<seconds> idles with no canvas mounted between combos, so the phone cools the same
 // amount before every engine.
 function buildPlan(url: string | null): Combo[] {
@@ -63,16 +66,23 @@ function buildPlan(url: string | null): Combo[] {
     (url?.split('?')[1] ?? '').split('&').map(kv => kv.split('=') as [string, string])
   );
   const pick = (key: string, all: readonly string[]) => {
-    const chosen = (q.get(key) ?? '').split(',').filter(v => all.includes(v));
+    const chosen = (q.get(key) ?? '')
+      .split(',')
+      .filter(v => all.includes(v) || (key === 'scenes' && /^paths\d+$/.test(v)));
     return chosen.length ? chosen : [...all];
   };
   const engines = pick('engines', ENGINES) as Engine[];
   const scenes = pick('scenes', SCENES);
+  const views = pick('views', VIEWS) as BackingView[];
   const reps = Math.max(1, Number(q.get('reps') ?? 1) || 1);
-  const one: Combo[] =
+  // skip=tgfx:anim-imp,skia:text drops engine:scene pairs from every view.
+  const skip = new Set((q.get('skip') ?? '').split(',').filter(Boolean));
+  const keep = (c: Combo) => !skip.has(`${c[0]}:${c[1]}`);
+  const one: Combo[] = views.flatMap(v =>
     q.get('order') === 'alternate'
-      ? scenes.flatMap(s => engines.map(e => [e, s] as Combo))
-      : engines.flatMap(e => scenes.map(s => [e, s] as Combo));
+      ? scenes.flatMap(s => engines.map(e => [e, s, v] as Combo))
+      : engines.flatMap(e => scenes.map(s => [e, s, v] as Combo))
+  ).filter(keep);
   return Array.from({ length: reps }, () => one).flat();
 }
 
@@ -81,20 +91,7 @@ function gapMsFrom(url: string | null): number {
   return Number.isFinite(gap) ? gap * 1000 : 0;
 }
 
-const PALETTE = [
-  '#FF3B30', '#FF9500', '#FFCC00', '#34C759',
-  '#5AC8FA', '#007AFF', '#5856D6', '#AF52DE',
-];
-
 // ---- static scene layouts (identical for both engines) ---------------------
-
-const SHAPES = Array.from({ length: 20000 }, (_, i) => ({
-  x: (i % 80) * (W / 80),
-  y: Math.floor(i / 80) * (H / 250),
-  size: W / 80 - 1,
-  color: PALETTE[i % PALETTE.length],
-  circle: i % 3 === 0,
-}));
 
 const IMAGE_CELLS = Array.from({ length: 3600 }, (_, i) => ({
   x: (i % 60) * (W / 60),
@@ -123,11 +120,18 @@ function makePaths(count: number, cols: number) {
     };
   });
 }
-const PATHS_100 = makePaths(100, 10);
-const PATHS_300 = makePaths(300, 18);
-const PATHS_900 = makePaths(900, 30);
+// `paths` is PATHS_DEFAULT paths; `paths<N>` (paths900, paths10000, ...) is any
+// other count, on the smallest square grid that holds it.
+const PATHS_DEFAULT = 10000;
+const pathsCache = new Map<number, ReturnType<typeof makePaths>>();
 function pathsFor(scene: string) {
-  return scene === 'paths100' ? PATHS_100 : scene === 'paths300' ? PATHS_300 : PATHS_900;
+  const count = Number(scene.slice('paths'.length)) || PATHS_DEFAULT;
+  let paths = pathsCache.get(count);
+  if (paths == null) {
+    paths = makePaths(count, Math.ceil(Math.sqrt(count)));
+    pathsCache.set(count, paths);
+  }
+  return paths;
 }
 
 const TEXTS = Array.from({ length: 6000 }, (_, i) => ({
@@ -158,11 +162,16 @@ half4 main(float2 pos) {
 
 const skEffect = Skia.RuntimeEffect.Make(SKSL)!;
 const skFont = matchFont({ fontFamily: 'sans-serif', fontSize: 14 });
+let skBlobs: ReturnType<typeof Skia.TextBlob.MakeFromText>[] | null = null;
+const skTextBlobs = () => (skBlobs ??= TEXTS.map(item => Skia.TextBlob.MakeFromText(item.label, skFont)));
 
 // ---- per-engine image assets ----------------------------------------------
 
 function makeSkTexture(i: number, size: number): SkImage {
-  const surface = Skia.Surface.MakeOffscreen(size, size)!;
+  // A raster surface: its snapshot is a CPU image every canvas can draw (a GPU
+  // snapshot cannot cross into the on-screen context). 3.10 dropped the sync
+  // GPU-to-raster readback the bench used before.
+  const surface = Skia.Surface.MakeRaster(size, size)!;
   const canvas = surface.getCanvas();
   const paint = Skia.Paint();
   paint.setColor(Skia.Color(PALETTE[i % PALETTE.length]));
@@ -171,10 +180,7 @@ function makeSkTexture(i: number, size: number): SkImage {
   canvas.drawCircle(size / 2, size / 2, size / 3, paint);
   paint.setColor(Skia.Color('#00000040'));
   canvas.drawRect({ x: size / 4, y: size / 4, width: size / 2, height: 6 }, paint);
-  // Texture-backed snapshots cannot cross into the on-screen context — they
-  // draw as nothing. Raster copy makes the image context-free (3.0 called it
-  // makeNonTextureImage).
-  return surface.makeImageSnapshot().makeRasterImageSync();
+  return surface.makeImageSnapshot();
 }
 
 function tgfxTextureScene(i: number, size: number) {
@@ -273,29 +279,18 @@ function SkiaScene({
   t,
   images,
   tile,
+  skText,
 }: {
   scene: string;
   t: ReturnType<typeof useSharedValue<number>>;
   images: SkImage[];
   tile: SkImage | null;
+  skText: 'text' | 'blob';
 }) {
   const transform = useDerivedValue(() => [{ rotate: t.value }]);
   const patternTransform = useDerivedValue(() => [{ rotate: t.value }, { scale: 0.03 }]);
   const uniforms = useDerivedValue(() => ({ uTime: t.value, uSize: [W, H] }));
   const origin = vec(CX, CY);
-  if (scene === 'shapes') {
-    return (
-      <SkGroup transform={transform} origin={origin}>
-        {SHAPES.map((s, i) =>
-          s.circle ? (
-            <SkCircle key={i} cx={s.x + s.size / 2} cy={s.y + s.size / 2} r={s.size / 2} color={s.color} />
-          ) : (
-            <SkRect key={i} x={s.x} y={s.y} width={s.size} height={s.size} color={s.color} />
-          )
-        )}
-      </SkGroup>
-    );
-  }
   if (scene === 'images') {
     if (images.length < 8) return null;
     return (
@@ -336,6 +331,18 @@ function SkiaScene({
       </SkGroup>
     );
   }
+  // sktext=blob: the same labels as prebuilt SkTextBlobs. <Text> hands Skia a
+  // string per draw (drawSimpleText), which re-shapes it and rebuilds its GPU
+  // blob every frame; a blob has an identity Skia's text cache can key on.
+  if (skText === 'blob') {
+    return (
+      <SkGroup transform={transform} origin={origin}>
+        {TEXTS.map((item, i) => (
+          <SkTextBlobView key={i} x={item.x} y={item.y} blob={skTextBlobs()[i]} color={item.color} />
+        ))}
+      </SkGroup>
+    );
+  }
   return (
     <SkGroup transform={transform} origin={origin}>
       {TEXTS.map((item, i) => (
@@ -353,16 +360,26 @@ export default function App() {
   const [tgfxTile, setTgfxTile] = useState<TgfxImage | null>(null);
   const [plan, setPlan] = useState<Combo[] | null>(null);
   const [gapMs, setGapMs] = useState(0);
+  // anim-imp for tgfx: which thread writes the 20k handles (bench://run?...&imp=js).
+  const [impDriver, setImpDriver] = useState<'ui' | 'js'>('ui');
+  // skia text: deviceIndependentFonts, on unless bench://run?...&dif=off.
+  const [dif, setDif] = useState(true);
+  // skia text: <Text> per label, or <TextBlob> with prebuilt blobs (&sktext=blob).
+  const [skText, setSkText] = useState<'text' | 'blob'>('text');
   const [cooling, setCooling] = useState(false);
   useEffect(() => {
     Linking.getInitialURL().then(url => {
       setGapMs(gapMsFrom(url));
+      setImpDriver(/[?&]imp=js\b/.test(url ?? '') ? 'js' : 'ui');
+      setDif(!/[?&]dif=off\b/.test(url ?? ''));
+      setSkText(/[?&]sktext=blob\b/.test(url ?? '') ? 'blob' : 'text');
       setPlan(buildPlan(url));
     });
   }, []);
   const done = plan != null && combo >= plan.length;
   const engine = plan == null || done ? 'done' : plan[combo][0];
   const scene = plan == null || done ? '' : plan[combo][1];
+  const view: BackingView = plan == null || done ? 'surface' : plan[combo][2];
 
   const t = useSharedValue(0);
   const uiFrames = useSharedValue(0);
@@ -395,7 +412,7 @@ export default function App() {
     cancelAnimation(t);
     t.value = 0;
     const poseTimer = setTimeout(
-      () => console.log(`[bench] pose engine=${engine} scene=${scene}`),
+      () => console.log(`[bench] pose engine=${engine} scene=${scene} view=${view}`),
       2500
     );
     const animTimer = setTimeout(() => {
@@ -410,7 +427,7 @@ export default function App() {
       clearTimeout(animTimer);
       cancelAnimation(t);
     };
-  }, [combo, done, engine, scene, t]);
+  }, [combo, done, engine, scene, view, t]);
 
   // UI-thread frames: a Reanimated frame callback rides the UI vsync.
   useFrameCallback(() => {
@@ -436,25 +453,25 @@ export default function App() {
   useEffect(() => {
     if (done || cooling) return;
     const timer = setInterval(() => {
-      console.log(`[bench] tick engine=${engine} scene=${scene} js=${jsFrames.current} ui=${uiFrames.value}`);
+      console.log(`[bench] tick engine=${engine} scene=${scene} view=${view} js=${jsFrames.current} ui=${uiFrames.value}`);
       jsFrames.current = 0;
       uiFrames.value = 0;
     }, 1000);
     return () => clearInterval(timer);
-  }, [engine, scene, done, cooling, uiFrames]);
+  }, [engine, scene, view, done, cooling, uiFrames]);
 
   // The matrix driver. Waits for the tgfx assets before combo 0 starts.
   const ready = tgfxImages.length === 8 && tgfxTile != null && plan != null;
   const last = plan != null && combo >= plan.length - 1;
   useEffect(() => {
     if (!ready || done || cooling) return;
-    console.log(`[bench] start engine=${engine} scene=${scene}`);
+    console.log(`[bench] start engine=${engine} scene=${scene} view=${view}`);
     const timer = setTimeout(
       () => (gapMs > 0 && !last ? setCooling(true) : setCombo(c => c + 1)),
       COMBO_MS
     );
     return () => clearTimeout(timer);
-  }, [ready, combo, done, cooling, gapMs, last, engine, scene]);
+  }, [ready, combo, done, cooling, gapMs, last, engine, scene, view]);
 
   // The gap: the canvas unmounts and the phone idles, the same for every engine.
   useEffect(() => {
@@ -489,25 +506,55 @@ export default function App() {
   return (
     <View style={styles.root}>
       {engine === 'tgfx' ? (
-        <TgfxCanvas style={StyleSheet.absoluteFill} opaque>
-          <TgfxFill color="#101014" />
-          <TgfxScene scene={scene} t={t} images={tgfxImages} tile={tgfxTile} />
-        </TgfxCanvas>
+        scene === 'anim-imp' ? (
+          <TgfxImperativeView key={combo} t={t} view={view} driver={impDriver} />
+        ) : (
+          <TgfxCanvas
+            key={combo}
+            style={StyleSheet.absoluteFill}
+            opaque
+            composite={view === 'texture' ? 'texture' : 'layer'}
+          >
+            <TgfxFill color={BG} />
+            {isAnim(scene) ? (
+              <TgfxAnimScene scene={scene} t={t} />
+            ) : (
+              <TgfxScene scene={scene} t={t} images={tgfxImages} tile={tgfxTile} />
+            )}
+          </TgfxCanvas>
+        )
       ) : (
-        <SkCanvas style={StyleSheet.absoluteFill} android={SK_ANDROID}>
-          <SkFill color="#101014" />
-          <SkiaScene scene={scene} t={t} images={skImages} tile={skTile} />
+        <SkCanvas
+          key={combo}
+          style={StyleSheet.absoluteFill}
+          android={SK_ANDROID[view]}
+          // Distance-field glyphs: rasterized once and reused under the rotation,
+          // instead of re-rasterized for every new transform (3.10, off by default).
+          deviceIndependentFonts={scene === 'text' && dif}
+        >
+          <SkFill color={BG} />
+          {scene === 'shapes' ? (
+            <SkBlobShapes t={t} />
+          ) : isAnim(scene) ? (
+            <SkiaAnimScene scene={scene} t={t} />
+          ) : (
+            <SkiaScene scene={scene} t={t} images={skImages} tile={skTile} skText={skText} />
+          )}
         </SkCanvas>
       )}
-      <RNText style={styles.label}>{`${engine} · ${scene}`}</RNText>
+      <RNText style={styles.label}>{`${engine} · ${scene} · ${view}`}</RNText>
     </View>
   );
 }
 
-// The same kind of layer tgfx draws into by default (composite="layer"): an opaque
-// SurfaceView. Skia 3.8 defaults to a TextureView, which also hides it from the
-// runner's `queueBuffer - SurfaceView[...]` present counter.
-const SK_ANDROID = { backingView: 'SurfaceView', opaque: true } as const;
+// Each view runs both engines on the same kind of layer: an opaque SurfaceView
+// (tgfx composite="layer", its default) or a TextureView in the view hierarchy
+// (tgfx composite="texture"; skia's default since 3.8).
+const SK_ANDROID = {
+  surface: { backingView: 'SurfaceView', opaque: true },
+  texture: { backingView: 'TextureView', opaque: true },
+} as const;
+const isAnim = (scene: string) => (ANIM_SCENES as readonly string[]).includes(scene);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#101014' },
