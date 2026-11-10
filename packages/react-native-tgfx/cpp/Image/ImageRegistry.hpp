@@ -23,7 +23,7 @@ class ImageCodec;
 
 namespace tgfxrn {
 
-/// Default budget for decoded pixels. Applied to the GPU cache too: an image is resident twice.
+/// Default budget for decoded pixels. A canvas's GPU cache follows it above a floor (TgfxRenderer).
 inline constexpr size_t kDefaultImageCacheBytes = 64u << 20;
 
 struct ImageHandle {
