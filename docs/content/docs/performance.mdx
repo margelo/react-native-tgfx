@@ -6,28 +6,48 @@ icon: Gauge
 
 ## Benchmark
 
-20,000 shapes, 3,600 images, a 40-octave shader, an image pattern, 900 paths
-and 6,000 texts against react-native-skia 3.8.1 on a Samsung SM-E146B (90 Hz),
-release builds, mean of two runs (paths: median of three). Rows marked (120 Hz
-device) are a moto g35 5G, median of three runs. Present FPS is frames that
-reached the screen.
+Against react-native-skia 3.10.0 on a Samsung Galaxy S25 Edge (SM-S937B,
+Android 16, 120 Hz), release builds, on both Android view kinds: a
+`SurfaceView` (`composite="layer"`, the default) and a `TextureView`
+(`composite="texture"`). Present FPS is frames that reached the screen. One
+run, each scene in a fresh process, mean of two 8 s windows.
 
-| engine · scene | Present FPS | UI FPS | JS FPS |
-|---|---|---|---|
-| tgfx · shapes | **60.5** | 90 | 90 |
-| skia · shapes | 25.8 | 90 | 90 |
-| tgfx · images | **90.3** | 90 | 90 |
-| skia · images | 66.1 | 90 | 90 |
-| tgfx · shader | **15.0** | 90 | 90 |
-| skia · shader | 9.3 | 90 | 90 |
-| tgfx · pattern | **90.3** | 90 | 90 |
-| skia · pattern | 84.8 | 90 | 90 |
-| tgfx · paths | **90.3** | 90 | 90 |
-| skia · paths | 17.9 | 90 | 90 |
-| tgfx · paths (120 Hz device) | **111.5** | 120 | 119 |
-| skia · paths (120 Hz device) | 78.8 | 120 | 119 |
-| tgfx · text | **68.3** | 90 | 90 |
-| skia · text | 34.4 | 90 | 90 |
+| scene | tgfx surface | skia surface | tgfx texture | skia texture |
+|---|---|---|---|---|
+| 20,000 shapes | 89.9 | **119.4** | 86.9 | **119.3** |
+| 20,000 shapes, recorded once | 114.4 | 104.6 | 110.9 | 108.8 |
+| 3,600 images | 119.4 | 119.0 | 118.8 | 118.8 |
+| 40-octave shader | 119.6 | 119.3 | 119.0 | 119.0 |
+| image pattern | 119.6 | 119.3 | 118.8 | 119.4 |
+| 10,000 paths | 11.6 | **115.2** | 17.1 | **116.8** |
+| 6,000 texts | **117.1** | 92.8 | **112.6** | 83.4 |
+| 5,000 shapes, each animated (declarative) | 35.2 | **75.4** | 22.1 | 21.5 |
+| 5,000 shapes, each animated (imperative) | not measured | 118.6 | not measured | 55.1 |
+
+How each row is drawn:
+
+- **Shapes.** Rects and circles interleaved, under one animated rotation. tgfx
+  draws plain `<Rect>` and `<Circle>` nodes and batches them itself; skia uses
+  its batched shape API (`Skia.ShapeBlob`). "Recorded once" is the same 20,000
+  individual draws in `<Group picture>` (tgfx) or a `<Picture>` (skia).
+- **Paths.** Cubic paths, half stroked. Both engines hold about 119 FPS up to
+  2,500 paths; tgfx falls to 80 at 5,000 and to the figure above at 10,000.
+- **Texts.** skia runs with `deviceIndependentFonts`.
+- **Each animated.** Every shape moves on its own phase, so no transform is
+  shared. Declarative binds two derived values per shape. Imperative writes
+  every shape from one worklet per frame: skia records a picture per frame;
+  tgfx's per-node handles stall at this count, so the row is not measured. For
+  thousands of independent sprites in tgfx, use a
+  [sprite buffer](#keep-it-cheap).
+- Both animated rows are limited by the UI thread, not the GPU, on either
+  engine.
+
+This phone caps its CPU clocks within seconds of a heavy scene while still
+reporting a normal thermal status, and CPU-bound rows follow the cap. The
+runner waits for the cap to lift before each scene, but treat differences
+under about 15% between rows below 120 FPS as noise. The harness, raw runs and
+method are in
+[`apps/benchmark`](https://github.com/margelo/react-native-tgfx/tree/main/apps/benchmark).
 
 Think a number is off?
 [Open an issue](https://github.com/margelo/react-native-tgfx/issues).
@@ -101,10 +121,13 @@ The first canvas window drops from **28.4 ms to 11.9 ms** on average.
 - `<Group picture>` records a static subtree once. Use `<Group layer>` only for
   group opacity or filters.
 - Pool handles with [`createHandle`](/api/functions/createHandle) and toggle
-  `visible` instead of remounting.
+  `visible` instead of remounting. Keep pools to hundreds of handles: on the
+  phone above each one costs about 0.6 ms to create, and writing 5,000 per
+  frame stalls.
 - For large sprite or mesh collections, use
   [`useSpriteBuffer`](/api/functions/useSpriteBuffer) or
-  [`useVertexBuffer`](/api/functions/useVertexBuffer).
+  [`useVertexBuffer`](/api/functions/useVertexBuffer). A worklet writes
+  positions straight into shared memory, with no per-node call.
 - One animated opacity per chain ([Animation](/docs/animation)).
 - [`purgeCaches`](/api/functions/purgeCaches) frees the image and GPU caches;
   [`getCacheInfo`](/api/functions/getCacheInfo) reports them

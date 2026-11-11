@@ -28,8 +28,38 @@ const PRESENT = arg('present', 'atrace');
 // --gap <seconds> idles the phone with no canvas between combos, so heat from one
 // engine's run is not carried into the next one's.
 const GAP = Number(arg('gap', '0'));
-const PLAN_URL = `bench://run?engines=${arg('engines', 'tgfx,skia')}&scenes=${arg('scenes', 'shapes,images,shader,pattern,paths,text')}&order=${arg('order', 'sequential')}&reps=${arg('reps', '1')}&gap=${GAP}`;
-const COMBOS = arg('engines', 'tgfx,skia').split(',').length * arg('scenes', 'shapes,images,shader,pattern,paths,text').split(',').length * Number(arg('reps', '1'));
+const ALL_SCENES = 'shapes,images,shader,pattern,paths,text,anim-decl,anim-imp,shapes-picture';
+// surface: both engines on a SurfaceView; texture: both on a TextureView.
+const VIEWS = arg('views', 'surface,texture');
+// --skip tgfx:anim-imp drops engine:scene pairs (from every view).
+const SKIP = new Set(arg('skip', '').split(',').filter(Boolean));
+const EXTRA = `&dif=${arg('dif', 'on')}&imp=${arg('imp', 'ui')}&sktext=${arg('sktext', 'text')}`;
+// The plan is built here and every combo runs in a process of its own: the app
+// is force-stopped and relaunched with a one-combo URL. In one long-lived
+// process the heavy scenes leave caches and heap behind (PSS passed 2 GB), and
+// the rows after them were measured in a different state than the rows before.
+const PLAN = (() => {
+  const engines = arg('engines', 'tgfx,skia').split(',');
+  const scenes = arg('scenes', ALL_SCENES).split(',');
+  const one = VIEWS.split(',').flatMap(v =>
+    arg('order', 'sequential') === 'alternate'
+      ? scenes.flatMap(s => engines.map(e => [e, s, v]))
+      : engines.flatMap(e => scenes.map(s => [e, s, v]))
+  ).filter(([e, s]) => !SKIP.has(`${e}:${s}`));
+  return Array.from({ length: Number(arg('reps', '1')) }, () => one).flat();
+})();
+const COMBOS = PLAN.length;
+// What atrace's `queueBuffer - <layer>` names the canvas's layer, per view. A
+// SurfaceView is its own BLAST layer. A TextureView has no layer: its frames
+// reach the screen only when the window's RenderThread composites them, so the
+// count is the app window's own queueBuffer, which nothing else in this app
+// redraws while a combo runs.
+// Samsung's Android 16 prefixes the layer with a hex id
+// (`queueBuffer - bc510b2 SurfaceView[...]`); the grep allows it.
+const LAYERS = {
+  surface: arg('surface-layer', `SurfaceView\\[${PACKAGE}`),
+  texture: arg('texture-layer', `VRI\\[MainActivity\\]`),
+};
 const SETTLE_TICKS = 3;
 const HZ = 100; // Linux USER_HZ
 
@@ -53,7 +83,7 @@ const combos = new Map();
 let current = null;
 function comboBucket(key) {
   if (!combos.has(key)) {
-    combos.set(key, { ticks: [], cpu: [], pss: [], java: [], native: [], graphics: [], presents: [], thermal: [], threads: new Map() });
+    combos.set(key, { ticks: [], cpu: [], pss: [], java: [], native: [], graphics: [], presents: [], thermal: [], cap: [], threads: new Map() });
   }
   return combos.get(key);
 }
@@ -141,6 +171,39 @@ async function sampleThermal(key) {
   const out = await adb('shell', 'dumpsys thermalservice | grep "Thermal Status"');
   const status = Number(out?.match(/Thermal Status: (\d+)/)?.[1]);
   if (Number.isFinite(status)) comboBucket(key).thermal.push(status);
+  const cap = await cpuCap();
+  if (cap != null) comboBucket(key).cap.push(cap);
+}
+
+// The thermal status hides most of the throttling: a Galaxy S25 Edge at status
+// 1 ("light") had its clusters capped at 1.8 of 3.5 GHz and 1.7 of 4.5 GHz, and
+// a CPU-bound row read 45 fps or 90 with the cap alone deciding which. This is
+// the lowest scaling_max_freq / cpuinfo_max_freq over the cpufreq policies:
+// 1 means no cap.
+async function cpuCap() {
+  const out = await adb('shell', 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "$(cat $p/scaling_max_freq) $(cat $p/cpuinfo_max_freq)"; done');
+  const ratios = (out ?? '').trim().split('\n').map(l => l.trim().split(/\s+/).map(Number)).filter(([a, b]) => a > 0 && b > 0).map(([a, b]) => a / b);
+  return ratios.length ? Math.min(...ratios) : null;
+}
+// --cool <ratio> holds each combo until the cap is back above it (default 0.99,
+// 0 to skip), for at most --cool-timeout seconds, app stopped.
+const COOL = Number(arg('cool', '0.99'));
+const COOL_TIMEOUT = Number(arg('cool-timeout', '600'));
+async function waitCool() {
+  if (!(COOL > 0)) return;
+  const since = Date.now();
+  for (;;) {
+    const cap = await cpuCap();
+    if (cap == null || cap >= COOL) break;
+    if (Date.now() - since > COOL_TIMEOUT * 1000) {
+      console.log(`[bench] still capped at ${(cap * 100).toFixed(0)}% after ${COOL_TIMEOUT}s, running anyway`);
+      break;
+    }
+    lastHeard = Date.now() + 10000;
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  const waited = (Date.now() - since) / 1000;
+  if (waited > 6) console.log(`[bench] cooled for ${waited.toFixed(0)}s`);
 }
 
 // ---- presented frames ------------------------------------------------------
@@ -171,13 +234,13 @@ async function samplePresentedLatency(key) {
   comboBucket(key).presents.push(median(samples));
   console.log(`[bench] ${key} present=${median(samples).toFixed(1)}fps (latency x${samples.length})`);
 }
-function samplePresented(key) {
+function samplePresented(key, view) {
   if (PRESENT === 'latency') return void samplePresentedLatency(key);
   if (tracing) return;
   tracing = true;
   execFile(
     'adb',
-    ['shell', `atrace -t ${TRACE_SECONDS} -b 8192 gfx 2>/dev/null | grep 'queueBuffer - SurfaceView\\[${PACKAGE}' | wc -l`],
+    ['shell', `atrace -t ${TRACE_SECONDS} -b 8192 gfx 2>/dev/null | grep 'queueBuffer - \\([0-9a-f]* \\)\\{0,1\\}${LAYERS[view]}' | wc -l`],
     { maxBuffer: 16 * 1024 * 1024 },
     (error, stdout) => {
       tracing = false;
@@ -214,23 +277,24 @@ function finish(reason) {
       graphics: median(bucket.graphics) / 1024,
       threads: new Map([...bucket.threads].map(([name, pcts]) => [name, median(pcts)])),
       thermal: bucket.thermal.length ? Math.max(...bucket.thermal) : null,
+      cap: bucket.cap.length ? Math.min(...bucket.cap) : null,
       n: measured.length,
     });
   }
   const lines = [
     `# tgfx vs skia bench (${reason})`,
     '',
-    '| engine · scene | Present FPS | UI FPS | JS FPS | CPU % (1 core = 100) | PSS MB | thermal | ticks |',
-    '|---|---|---|---|---|---|---|---|',
+    '| engine · scene · view | Present FPS | UI FPS | JS FPS | CPU % (1 core = 100) | PSS MB | thermal | CPU cap % | ticks |',
+    '|---|---|---|---|---|---|---|---|---|',
     ...rows.map(r =>
-      `| ${r.key} | ${r.present == null ? '?' : r.present.toFixed(1)} | ${r.ui.toFixed(0)} | ${r.js.toFixed(0)} | ${r.cpu.toFixed(0)} | ${r.pss.toFixed(1)} | ${r.thermal ?? '?'} | ${r.n} |`
+      `| ${r.key} | ${r.present == null ? '?' : r.present.toFixed(1)} | ${r.ui.toFixed(0)} | ${r.js.toFixed(0)} | ${r.cpu.toFixed(0)} | ${r.pss.toFixed(1)} | ${r.thermal ?? '?'} | ${r.cap == null ? '?' : (r.cap * 100).toFixed(0)} | ${r.n} |`
     ),
     '',
-    '`thermal` is the highest Android thermal status (0 none … 3 severe) seen at the start of the combo\'s runs.',
+    '`thermal` is the highest Android thermal status (0 none … 3 severe) seen at the start of the combo\'s runs. `CPU cap %` is the lowest scaling_max_freq / cpuinfo_max_freq seen during them: below 100 the kernel was throttling, whatever the status says.',
     '',
     '## Where the CPU and memory go',
     '',
-    '| engine · scene | UI thread % | JS thread % | busiest other threads % | Graphics MB | Native MB | Java MB |',
+    '| engine · scene · view | UI thread % | JS thread % | busiest other threads % | Graphics MB | Native MB | Java MB |',
     '|---|---|---|---|---|---|---|',
     ...rows.map(r => {
       const pct = name => (r.threads.get(name) ?? 0).toFixed(0);
@@ -281,33 +345,37 @@ function onLogcat(chunk) {
     lastLine = line;
     const stamp = line.match(/^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)/);
     if (stamp) lastTimestamp = stamp[1];
-    const start = line.match(/\[bench\] start engine=(\w+) scene=(\w+)/);
+    const start = line.match(/\[bench\] start engine=(\w+) scene=([\w-]+) view=(\w+)/);
     if (start) {
-      current = `${start[1]} · ${start[2]}`;
+      current = `${start[1]} · ${start[2]} · ${start[3]}`;
       console.log(`[bench] >> ${current}`);
       const key = current;
       sampleThermal(key);
-      setTimeout(() => samplePresented(key), 6000);
+      // Again near the end: a cap that came down mid-combo should show.
+      setTimeout(() => cpuCap().then(cap => cap != null && comboBucket(key).cap.push(cap)), 21000);
+      // Two 8 s windows per combo; the row is their median (with two, the mean).
+      setTimeout(() => samplePresented(key, start[3]), 6000);
+      setTimeout(() => samplePresented(key, start[3]), 15500);
       setTimeout(() => sampleThreads(key), 7000);
       continue;
     }
     // The app freezes t=0 for 1.5s and prints this; a screencap inside the
     // window gives pixel-comparable parity stills across the two engines.
-    const pose = line.match(/\[bench\] pose engine=(\w+) scene=(\w+)/);
+    const pose = line.match(/\[bench\] pose engine=(\w+) scene=([\w-]+) view=(\w+)/);
     if (pose) {
-      const shot = join(shotsDir, `${pose[1]}-${pose[2]}.png`);
+      const shot = join(shotsDir, `${pose[1]}-${pose[2]}-${pose[3]}.png`);
       execFile('bash', ['-c', `adb exec-out screencap -p > '${shot}'`], () => {});
       continue;
     }
-    const tick = line.match(/\[bench\] tick engine=(\w+) scene=(\w+) js=(\d+) ui=(\d+)/);
+    const tick = line.match(/\[bench\] tick engine=(\w+) scene=([\w-]+) view=(\w+) js=(\d+) ui=(\d+)/);
     if (tick) {
-      const key = `${tick[1]} · ${tick[2]}`;
+      const key = `${tick[1]} · ${tick[2]} · ${tick[3]}`;
       const bucket = comboBucket(key);
-      bucket.ticks.push({ js: Number(tick[3]), ui: Number(tick[4]) });
-      process.stdout.write(`[bench] ${key} js=${tick[3]} ui=${tick[4]}\n`);
+      bucket.ticks.push({ js: Number(tick[4]), ui: Number(tick[5]) });
+      process.stdout.write(`[bench] ${key} js=${tick[4]} ui=${tick[5]}\n`);
       continue;
     }
-    if (line.includes('[bench] done')) finish('complete');
+    if (line.includes('[bench] done')) nextCombo();
   }
 }
 startLogcat();
@@ -325,8 +393,28 @@ const logcatWatchdog = setInterval(() => {
   }
 }, 2000);
 
-await adb('shell', 'am', 'force-stop', PACKAGE);
-await adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-n', `${PACKAGE}/.MainActivity`, '-d', `'${PLAN_URL}'`);
+let at = -1;
+let advancing = false;
+async function nextCombo() {
+  if (advancing) return;
+  advancing = true;
+  current = null;
+  await adb('shell', 'am', 'force-stop', PACKAGE);
+  at += 1;
+  if (at >= PLAN.length) return finish('complete');
+  // The gap is spent with the app dead: nothing of ours runs while the phone cools.
+  if (at > 0 && GAP > 0) {
+    lastHeard = Date.now() + GAP * 1000;
+    await new Promise(r => setTimeout(r, GAP * 1000));
+  }
+  await waitCool();
+  const [engine, scene, view] = PLAN[at];
+  lastHeard = Date.now() + 5000;
+  await adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-n', `${PACKAGE}/.MainActivity`, '-d', `'bench://run?engines=${engine}&scenes=${scene}&views=${view}${EXTRA}'`);
+  advancing = false;
+}
+await nextCombo();
 const timer = setInterval(sample, 1000);
 // combos x (28s + gap) + startup, with slack.
-setTimeout(() => finish('timeout'), (COMBOS * (28 + GAP) + 60) * 1000);
+// Cooling waits are bounded per combo, so the backstop has to allow for them.
+setTimeout(() => finish('timeout'), (COMBOS * (28 + GAP + 12 + (COOL > 0 ? COOL_TIMEOUT : 0)) + 60) * 1000);
