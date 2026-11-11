@@ -31,6 +31,11 @@ namespace {
 std::mutex renderersMutex;
 std::vector<TgfxRenderer*> renderers;
 std::atomic<uint64_t> purgeGeneration{1};
+
+/// A canvas's GPU cache never goes below this, whatever the image budget. It also holds each
+/// frame's path geometry and glyphs, so a budget smaller than one frame's set rebuilds them
+/// every frame. Resources unused for 120 frames are freed regardless.
+constexpr size_t kMinCanvasGpuCacheBytes = 256u << 20;
 }  // namespace
 
 TgfxRenderer::TgfxRenderer() {
@@ -365,8 +370,9 @@ bool TgfxRenderer::draw() {
     context->purgeResourcesNotUsedSince(std::chrono::steady_clock::now());
     purgedGen_.store(purgeGen, std::memory_order_release);
   }
-  // A decoded image is resident twice, CPU and GPU, so both follow setImageCacheLimit().
-  size_t cacheLimit = ImageRegistry::instance().cacheLimit();
+  // A decoded image is resident twice, CPU and GPU, so a larger setImageCacheLimit() raises this
+  // too; a smaller one leaves the floor for the frame's geometry.
+  size_t cacheLimit = std::max(ImageRegistry::instance().cacheLimit(), kMinCanvasGpuCacheBytes);
   if (!cacheLimitApplied_ || appliedCacheLimit_ != cacheLimit) {
     context->setCacheLimit(cacheLimit);
     appliedCacheLimit_ = cacheLimit;

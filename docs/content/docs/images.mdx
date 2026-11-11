@@ -252,7 +252,8 @@ if (image != null) {
 setImageCacheLimit(32 * 1024 * 1024)
 ```
 
-The default is 64 MB, applied to both the decoded-pixel and GPU caches.
+The default is 64 MB of decoded pixels. A canvas's GPU cache uses the same
+limit when it is above 256 MB, and 256 MB otherwise.
 
 [`getCacheInfo`](/api/functions/getCacheInfo) reports usage.
 [`purgeCaches`](/api/functions/purgeCaches) frees it all, e.g. on memory pressure:

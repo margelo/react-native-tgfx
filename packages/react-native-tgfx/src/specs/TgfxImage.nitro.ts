@@ -248,10 +248,8 @@ export interface TgfxImageFactory extends HybridObject<{
   ): Promise<TgfxImage>
 
   /**
-   * Byte budget for decoded images. A decoded image is resident twice - as CPU
-   * pixels here and as the GPU texture uploaded from them - so this number is
-   * applied to both the pixel cache and the tgfx context's resource cache
-   * rather than to only one of them. Defaults to 64 MB.
+   * Byte budget for decoded images. Defaults to 64 MB. A canvas's GPU cache
+   * uses the same budget when it is above 256 MB, and 256 MB otherwise.
    */
   setCacheLimit(bytes: number): void
 
