@@ -110,7 +110,17 @@ export function TgfxAnimScene({ scene, t }: { scene: string; t: T }) {
  * React never sees the nodes, and one worklet per frame writing every
  * handle. `inHierarchy` is what `<Canvas composite="texture">` sets.
  */
-export function TgfxImperativeView({ t, view, driver }: { t: T; view: View; driver: 'ui' | 'js' }) {
+export function TgfxImperativeView({
+  t,
+  view,
+  driver,
+  onAttached,
+}: {
+  t: T;
+  view: View;
+  driver: 'ui' | 'js';
+  onAttached?: () => void;
+}) {
   const built = useRef<{ scene: Scene; handles: ReturnType<typeof createHandle>[] } | null>(null);
   if (built.current == null) {
     const t0 = Date.now();
@@ -138,11 +148,14 @@ export function TgfxImperativeView({ t, view, driver }: { t: T; view: View; driv
   }
   const { scene, handles } = built.current;
   const detach = useRef<(() => void) | null>(null);
+  const attached = useRef(onAttached);
+  attached.current = onAttached;
   const hybrid = useRef<ReturnType<typeof callback<(ref: TgfxViewRef) => void>> | null>(null);
   if (hybrid.current == null) {
     hybrid.current = callback((ref: TgfxViewRef) => {
       detach.current?.();
       detach.current = scene.attach(ref);
+      attached.current?.();
     });
   }
   useEffect(

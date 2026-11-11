@@ -453,6 +453,10 @@ export default function App() {
   const engine = plan == null || done ? 'done' : plan[combo][0];
   const scene = plan == null || done ? '' : plan[combo][1];
   const view: BackingView = plan == null || done ? 'surface' : plan[combo][2];
+  // tgfx anim-imp builds 5,000 handles and its scene on the JS thread before it
+  // can draw; its clock and pose start once that scene is attached to the view.
+  const [attachedCombo, setAttachedCombo] = useState(-1);
+  const sceneReady = !(engine === 'tgfx' && scene === 'anim-imp') || attachedCombo === combo;
 
   const t = useSharedValue(0);
   const uiFrames = useSharedValue(0);
@@ -484,7 +488,7 @@ export default function App() {
   // Each combo opens with t frozen at 0: the runner screencaps both engines in
   // the same pose (parity stills), then the rotation starts.
   useEffect(() => {
-    if (done) return;
+    if (done || !sceneReady) return;
     cancelAnimation(t);
     t.value = 0;
     const poseTimer = setTimeout(
@@ -503,7 +507,7 @@ export default function App() {
       clearTimeout(animTimer);
       cancelAnimation(t);
     };
-  }, [combo, done, engine, scene, view, t]);
+  }, [combo, done, sceneReady, engine, scene, view, t]);
 
   // UI-thread frames: a Reanimated frame callback rides the UI vsync.
   useFrameCallback(() => {
@@ -540,14 +544,14 @@ export default function App() {
   const ready = tgfxImages.length === 8 && tgfxTile != null && plan != null;
   const last = plan != null && combo >= plan.length - 1;
   useEffect(() => {
-    if (!ready || done || cooling) return;
+    if (!ready || !sceneReady || done || cooling) return;
     console.log(`[bench] start engine=${engine} scene=${scene} view=${view}`);
     const timer = setTimeout(
       () => (gapMs > 0 && !last ? setCooling(true) : setCombo(c => c + 1)),
       COMBO_MS
     );
     return () => clearTimeout(timer);
-  }, [ready, combo, done, cooling, gapMs, last, engine, scene, view]);
+  }, [ready, sceneReady, combo, done, cooling, gapMs, last, engine, scene, view]);
 
   // The gap: the canvas unmounts and the phone idles, the same for every engine.
   useEffect(() => {
@@ -583,7 +587,13 @@ export default function App() {
     <View style={styles.root}>
       {engine === 'tgfx' ? (
         scene === 'anim-imp' ? (
-          <TgfxImperativeView key={combo} t={t} view={view} driver={impDriver} />
+          <TgfxImperativeView
+            key={combo}
+            t={t}
+            view={view}
+            driver={impDriver}
+            onAttached={() => setAttachedCombo(combo)}
+          />
         ) : (
           <TgfxCanvas
             key={combo}

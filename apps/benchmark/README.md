@@ -36,7 +36,7 @@ fastest way its API offers for that style:
 | scene | shapes | tgfx | skia |
 |---|---|---|---|
 | `anim-decl` | 5,000 | two `useDerivedValue` per shape, bound as props | the same |
-| `anim-imp` | 5,000 | `Scene` + node handles on a raw `TgfxNativeView`, one worklet writes every handle (wedges the JS thread: run with `--skip tgfx:anim-imp`) | one worklet records an `SkPicture` per frame into `<Picture>` |
+| `anim-imp` | 5,000 | `Scene` + node handles on a raw `TgfxNativeView`, one worklet writes every handle; the 5,000 handles take a few seconds to create, so the combo's clock starts once the scene is attached | one worklet records an `SkPicture` per frame into `<Picture>` |
 | `shapes-picture` | 20,000 | the static shapes in `<Group picture>` under the rotation | the static shapes recorded once, `<Picture>` under the rotation |
 
 `anim-decl` stops at 5,000: at 20,000 the 40,000 mappers measure Reanimated,
