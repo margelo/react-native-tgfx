@@ -2,7 +2,7 @@
 // whole matrix by itself and prints one `[bench] tick ...` line per second to
 // logcat; bench/run.mjs pairs those with host-side CPU and PSS samples.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text as RNText, View } from 'react-native';
+import { Linking, PixelRatio, StyleSheet, Text as RNText, View } from 'react-native';
 import {
   Easing,
   cancelAnimation,
@@ -22,11 +22,13 @@ import {
   Rect as TgfxRect,
   Shader as TgfxShader,
   Text as TgfxText,
+  Vertices as TgfxVertices,
   TgfxImage,
   renderToImage,
 } from 'react-native-tgfx';
 import {
   Canvas as SkCanvas,
+  Circle as SkCircle,
   Fill as SkFill,
   Group as SkGroup,
   Image as SkImageView,
@@ -47,7 +49,10 @@ import { BG, CX, CY, H, PALETTE, SHAPES, W } from './layout';
 
 // react-native-skia 3.x has one canvas, on Graphite.
 const ENGINES = ['tgfx', 'skia'] as const;
-const SCENES = ['shapes', 'images', 'shader', 'pattern', 'paths', 'text', ...ANIM_SCENES] as const;
+// `shapes` pits each engine's fastest static path against the other: tgfx nodes,
+// skia's ShapeBlob. `shapes-nodes` and `shapes-atlas` hold the technique equal:
+// 20k declarative nodes on both, or one sprite atlas and one tinted mesh on both.
+const SCENES = ['shapes', 'shapes-nodes', 'shapes-atlas', 'images', 'shader', 'pattern', 'paths', 'text', ...ANIM_SCENES] as const;
 // surface: tgfx composite="layer", skia backingView SurfaceView.
 // texture: tgfx composite="texture", skia backingView TextureView (its default).
 const VIEWS = ['surface', 'texture'] as const;
@@ -198,6 +203,47 @@ function tgfxTextureScene(i: number, size: number) {
   );
 }
 
+// `shapes-atlas` for tgfx: ShapeBlob's technique through the public API. One
+// white circle and one white rect, rasterized once at the device scale, side by
+// side in a two-cell atlas; every shape is a quad tinted by its vertex colour.
+const ATLAS_PX = SHAPES[0].size * PixelRatio.get();
+const ATLAS_CELL = Math.ceil(ATLAS_PX) + 2;
+
+function tgfxAtlasScene() {
+  const r = ATLAS_PX / 2;
+  return (
+    <>
+      <TgfxCircle cx={1 + r} cy={1 + r} r={r} color="#ffffff" />
+      <TgfxRect x={ATLAS_CELL + 1} y={1} width={ATLAS_PX} height={ATLAS_PX} color="#ffffff" />
+    </>
+  );
+}
+
+// Two triangles per shape, padded by one device pixel on each side so the
+// atlas cell's antialiased edge is inside the quad.
+let atlasMesh: { vertices: { x: number; y: number }[]; textures: { x: number; y: number }[]; colors: string[] } | null = null;
+function tgfxAtlasMesh() {
+  if (atlasMesh != null) return atlasMesh;
+  const pad = 1 / PixelRatio.get();
+  const vertices: { x: number; y: number }[] = [];
+  const textures: { x: number; y: number }[] = [];
+  const colors: string[] = [];
+  for (const s of SHAPES) {
+    const x0 = s.x - pad;
+    const y0 = s.y - pad;
+    const x1 = s.x + s.size + pad;
+    const y1 = s.y + s.size + pad;
+    const u0 = s.circle ? 0 : ATLAS_CELL;
+    const u1 = u0 + ATLAS_PX + 2;
+    const v1 = ATLAS_PX + 2;
+    vertices.push({ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 });
+    textures.push({ x: u0, y: 0 }, { x: u1, y: 0 }, { x: u1, y: v1 }, { x: u0, y: 0 }, { x: u1, y: v1 }, { x: u0, y: v1 });
+    for (let k = 0; k < 6; k += 1) colors.push(s.color);
+  }
+  atlasMesh = { vertices, textures, colors };
+  return atlasMesh;
+}
+
 // ---- scenes ----------------------------------------------------------------
 
 function TgfxScene({
@@ -205,14 +251,27 @@ function TgfxScene({
   t,
   images,
   tile,
+  atlas,
 }: {
   scene: string;
   t: ReturnType<typeof useSharedValue<number>>;
   images: TgfxImage[];
   tile: TgfxImage | null;
+  atlas: TgfxImage | null;
 }) {
   const origin = { x: CX, y: CY };
-  if (scene === 'shapes') {
+  if (scene === 'shapes-atlas') {
+    if (atlas == null) return null;
+    const mesh = tgfxAtlasMesh();
+    return (
+      <TgfxGroup transform={[{ rotate: t }]} origin={origin}>
+        <TgfxVertices vertices={mesh.vertices} textures={mesh.textures} colors={mesh.colors}>
+          <TgfxImageShader image={atlas} />
+        </TgfxVertices>
+      </TgfxGroup>
+    );
+  }
+  if (scene === 'shapes' || scene === 'shapes-nodes') {
     return (
       <TgfxGroup transform={[{ rotate: t }]} origin={origin}>
         {SHAPES.map((s, i) =>
@@ -291,6 +350,19 @@ function SkiaScene({
   const patternTransform = useDerivedValue(() => [{ rotate: t.value }, { scale: 0.03 }]);
   const uniforms = useDerivedValue(() => ({ uTime: t.value, uSize: [W, H] }));
   const origin = vec(CX, CY);
+  if (scene === 'shapes-nodes') {
+    return (
+      <SkGroup transform={transform} origin={origin}>
+        {SHAPES.map((s, i) =>
+          s.circle ? (
+            <SkCircle key={i} cx={s.x + s.size / 2} cy={s.y + s.size / 2} r={s.size / 2} color={s.color} />
+          ) : (
+            <SkRect key={i} x={s.x} y={s.y} width={s.size} height={s.size} color={s.color} />
+          )
+        )}
+      </SkGroup>
+    );
+  }
   if (scene === 'images') {
     if (images.length < 8) return null;
     return (
@@ -358,6 +430,7 @@ export default function App() {
   const [combo, setCombo] = useState(0);
   const [tgfxImages, setTgfxImages] = useState<TgfxImage[]>([]);
   const [tgfxTile, setTgfxTile] = useState<TgfxImage | null>(null);
+  const [tgfxAtlas, setTgfxAtlas] = useState<TgfxImage | null>(null);
   const [plan, setPlan] = useState<Combo[] | null>(null);
   const [gapMs, setGapMs] = useState(0);
   // anim-imp for tgfx: which thread writes the 20k handles (bench://run?...&imp=js).
@@ -396,9 +469,12 @@ export default function App() {
         built.push(await renderToImage(tgfxTextureScene(i, 128), { width: 128, height: 128 }));
       }
       const builtTile = await renderToImage(tgfxTextureScene(2, 64), { width: 64, height: 64 });
+      // Here, not in the scene: renderToImage needs no canvas mounted around it.
+      const builtAtlas = await renderToImage(tgfxAtlasScene(), { width: ATLAS_CELL * 2, height: ATLAS_CELL });
       if (!alive) return;
       setTgfxImages(built);
       setTgfxTile(builtTile);
+      setTgfxAtlas(builtAtlas);
     })();
     return () => {
       alive = false;
@@ -519,7 +595,7 @@ export default function App() {
             {isAnim(scene) ? (
               <TgfxAnimScene scene={scene} t={t} />
             ) : (
-              <TgfxScene scene={scene} t={t} images={tgfxImages} tile={tgfxTile} />
+              <TgfxScene scene={scene} t={t} images={tgfxImages} tile={tgfxTile} atlas={tgfxAtlas} />
             )}
           </TgfxCanvas>
         )
@@ -533,7 +609,7 @@ export default function App() {
           deviceIndependentFonts={scene === 'text' && dif}
         >
           <SkFill color={BG} />
-          {scene === 'shapes' ? (
+          {scene === 'shapes' || scene === 'shapes-atlas' ? (
             <SkBlobShapes t={t} />
           ) : isAnim(scene) ? (
             <SkiaAnimScene scene={scene} t={t} />
