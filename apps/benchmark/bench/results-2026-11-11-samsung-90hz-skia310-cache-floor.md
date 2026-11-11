@@ -48,7 +48,31 @@ at 1). skia's static rows are within 1.2 %, its animated rows within 6 %.
 | paths, 10,000 | **21.8** | 10.3 | **20.4** | 10.1 |
 | text, 6,000 (skia `deviceIndependentFonts`) | **73.1** | 32.2 | **66.0** | 30.4 |
 | anim-decl, 5k shapes, two derived values each | 24.3 | **31.4** | 11.9 | 9.8 |
-| anim-imp, 5k shapes, one worklet | ~17 by hand | 53.2 | ~6 by hand | 23.2 |
+| anim-imp, 5k shapes, one worklet | 13.6 | **53.2** | 5.0 | **23.2** |
+
+## tgfx anim-imp
+
+The matrix skips tgfx `anim-imp`: its 5,000 handles take about 4.3 s to
+create on the JS thread, and the scene attaches 12-20 s after launch, so the
+combo's 28 s clock ran out on setup. The app now starts that combo's clock
+and pose once the scene is attached; every other combo starts as before.
+A separate run on the after build with that change, skia alternating:
+
+`node bench/run.mjs --engines tgfx,skia --scenes anim-imp --order alternate --reps 2 --gap 10 --cool 0.95 --cool-timeout 240`
+
+| | tgfx | skia |
+|---|---|---|
+| surface, present FPS | 13.6 (13.9, 12.5, 14.1, 13.4) | 59.4 (64.3, 54.6) |
+| texture, present FPS | 5.0 (4.8, 4.5, 5.3, 6.8) | 22.3 (24.6, 20.0, 24.0, 20.6) |
+| UI thread | 98 % | 95-97 % |
+| PSS | 1119 / 1147 MB | 345 / 388 MB |
+| Native | 565 MB | 123 MB |
+
+Both engines are UI-thread bound; tgfx's one worklet writing 5,000 handles
+per frame is 4.4x slower than skia recording a picture. `TgfxRender` sits at
+61-66 %. skia's SurfaceView combo logged one window per run; the table above
+keeps the matrix's 53.2 and 23.2 for skia. The tgfx combos ran at thermal
+status 1 with the CPU cap at 68-72 %. Raw output in the raw file.
 
 ## Conditions
 

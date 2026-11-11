@@ -133,3 +133,25 @@
 | skia · anim-imp · texture | 96 | 1 | RNSkia Render 12, RNSkia Present 9, RenderThread 4 | 173.4 | 123.2 | 4.5 |
 | tgfx · shapes-picture · texture | 10 | 2 | TgfxRender 123, nitro-thread 15, RenderThread 12 | 195.4 | 144.2 | 4.4 |
 | skia · shapes-picture · texture | 8 | 2 | RNSkia Render 43, RNSkia Present 25, mali-cmar-backe 5 | 271.5 | 113.4 | 4.5 |
+
+## tgfx anim-imp, clock from scene attach
+
+`node bench/run.mjs --engines tgfx,skia --scenes anim-imp --order alternate --reps 2 --gap 10 --cool 0.95 --cool-timeout 240`
+
+Per-window present FPS: tgfx surface 13.9, 12.5, 14.1, 13.4; skia surface 64.3, 54.6; tgfx texture 4.8, 4.5, 5.3, 6.8; skia texture 24.6, 20.0, 24.0, 20.6.
+
+| engine · scene · view | Present FPS | UI FPS | JS FPS | CPU % (1 core = 100) | PSS MB | thermal | CPU cap % | ticks |
+|---|---|---|---|---|---|---|---|---|
+| tgfx · anim-imp · surface | 13.6 | 14 | 7 | 176 | 1118.8 | 1 | 68 | 69 |
+| skia · anim-imp · surface | 59.4 | 74 | 37 | 158 | 344.9 | 1 | 72 | 52 |
+| tgfx · anim-imp · texture | 5.0 | 15 | 7 | 172 | 1146.6 | 1 | 72 | 66 |
+| skia · anim-imp · texture | 22.3 | 77 | 39 | 129 | 387.9 | 2 | 84 | 52 |
+
+### Where the CPU and memory go
+
+| engine · scene · view | UI thread % | JS thread % | busiest other threads % | Graphics MB | Native MB | Java MB |
+|---|---|---|---|---|---|---|
+| tgfx · anim-imp · surface | 98 | 0 | TgfxRender 66, nitro-thread 8, binder 5 | 159.2 | 565.3 | 6.2 |
+| skia · anim-imp · surface | 95 | 1 | RNSkia Render 29, RNSkia Present 25, binder 5 | 134.7 | 123.0 | 6.9 |
+| tgfx · anim-imp · texture | 98 | 0 | TgfxRender 61, nitro-thread 5, binder 4 | 186.6 | 565.1 | 6.7 |
+| skia · anim-imp · texture | 97 | 1 | RNSkia Render 12, RNSkia Present 9, RenderThread 4 | 173.4 | 124.3 | 6.8 |
