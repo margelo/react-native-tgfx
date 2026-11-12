@@ -6,8 +6,34 @@ icon: Gauge
 
 ## Benchmark
 
-Against react-native-skia 3.10.0 on a Samsung SM-E146B (Exynos 1330, Android
-15, 90 Hz), release builds, two runs per scene.
+Against react-native-skia 3.10.0, release builds, two runs per scene. The
+numbers are frames presented per second. Which engine leads depends on the
+phone, so the same matrix is shown on two.
+
+### Google Pixel 8
+
+Tensor G3, Android 17, 120 Hz.
+
+| scene | tgfx surface | skia surface | tgfx texture | skia texture |
+|---|---|---|---|---|
+| 20,000 shapes | 116.3 | 118.3 | 90.1 | **116.9** |
+| 20,000 shapes, nodes on both | **116.8** | 54.9 | **87.9** | 53.4 |
+| 20,000 shapes, one atlas on both | 118.8 | 118.6 | 115.6 | 117.0 |
+| 20,000 shapes, recorded once | **115.0** | 63.3 | **84.4** | 61.0 |
+| 3,600 images | 119.0 | 111.6 | **108.0** | 85.1 |
+| 40-octave shader | **117.2** | 49.5 | **96.3** | 47.9 |
+| image pattern | 119.1 | 117.8 | 115.1 | 116.3 |
+| 900 paths | 118.9 | 118.4 | 102.3 | **116.8** |
+| 2,500 paths | 103.7 | **118.3** | 96.5 | **115.9** |
+| 5,000 paths | 46.8 | **117.6** | 46.6 | **115.4** |
+| 10,000 paths | 21.0 | **75.4** | 20.9 | **76.4** |
+| 6,000 texts | **84.8** | 41.8 | **81.8** | 41.4 |
+| 5,000 shapes, each animated (declarative) | 23.9 | **45.8** | 4.0 | **11.9** |
+| 5,000 shapes, each animated (imperative) | not run | 100.7 | not run | 25.3 |
+
+### Samsung SM-E146B
+
+Exynos 1330, Android 15, 90 Hz.
 
 | scene | tgfx surface | skia surface | tgfx texture | skia texture |
 |---|---|---|---|---|
@@ -103,7 +129,7 @@ The first canvas window drops from **28.4 ms to 11.9 ms** on average.
   group opacity or filters.
 - Pool handles with [`createHandle`](/api/functions/createHandle) and toggle
   `visible` instead of remounting. Keep pools to hundreds of handles: on the
-  phone above each one costs about 0.6 ms to create, and writing 5,000 per
+  SM-E146B each one costs about 0.6 ms to create, and writing 5,000 per
   frame stalls.
 - For large sprite or mesh collections, use
   [`useSpriteBuffer`](/api/functions/useSpriteBuffer) or
